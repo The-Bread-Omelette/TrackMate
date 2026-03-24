@@ -101,7 +101,7 @@ class _SocialPageState extends State<SocialPage>
               unselectedLabelColor: AppColors.textSecondary,
               indicatorColor: AppColors.primary,
               tabs: [
-                Tab(text: 'Feed'),
+                const Tab(text: 'Feed'), // FIX: Added missing const
                 Tab(
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -155,6 +155,7 @@ class _SocialPageState extends State<SocialPage>
                         requests: _requests,
                         searchCtrl: _searchCtrl,
                         searchResults: _searchResults,
+                        sentRequests: _sentRequests, // FIX: Passed _sentRequests variable
                         onSearch: _search,
                         onAccept: (id) async {
                           await _ds.respondToFriendRequest(id, true);
@@ -349,6 +350,7 @@ class _FriendsTab extends StatelessWidget {
   final ValueChanged<String> onSendRequest;
   final Future<void> Function() onRefresh;
 
+  // FIX: Made this required in the constructor instead of uninitialized
   final Set<String> sentRequests;
 
   const _FriendsTab({
@@ -362,6 +364,7 @@ class _FriendsTab extends StatelessWidget {
     required this.onRemove,
     required this.onSendRequest,
     required this.onRefresh,
+    required this.sentRequests, // FIX: Added to constructor arguments
   });
 
   @override
@@ -403,25 +406,24 @@ class _FriendsTab extends StatelessWidget {
                     title: Text(user['full_name'] ?? ''),
                     subtitle: Text(user['role'] ?? ''),
 
-                // Replace the IconButton in search results:
-                  trailing: sentRequests.contains(user['id'])
-                      ? const Chip(
-                          label: Text('Sent', style: TextStyle(fontSize: 11)),
-                          backgroundColor: Colors.green,
-                          labelStyle: TextStyle(color: Colors.white),
-                          padding: EdgeInsets.zero,
-                        )
-                      : friends.any((f) => (f as Map)['id'] == user['id'])
-                          ? const Chip(
-                              label: Text('Added', style: TextStyle(fontSize: 11)),
-                              backgroundColor: AppColors.primary,
-                              labelStyle: TextStyle(color: Colors.white),
-                              padding: EdgeInsets.zero,
-                            )
-                          : IconButton(
-                              icon: const Icon(Icons.person_add, color: AppColors.primary),
-                              onPressed: () => onSendRequest(user['id']),
-                            ),
+                    trailing: sentRequests.contains(user['id'])
+                        ? const Chip(
+                            label: Text('Sent', style: TextStyle(fontSize: 11)),
+                            backgroundColor: Colors.green,
+                            labelStyle: TextStyle(color: Colors.white),
+                            padding: EdgeInsets.zero,
+                          )
+                        : friends.any((f) => (f as Map)['id'] == user['id'])
+                            ? const Chip(
+                                label: Text('Added', style: TextStyle(fontSize: 11)),
+                                backgroundColor: AppColors.primary,
+                                labelStyle: TextStyle(color: Colors.white),
+                                padding: EdgeInsets.zero,
+                              )
+                            : IconButton(
+                                icon: const Icon(Icons.person_add, color: AppColors.primary),
+                                onPressed: () => onSendRequest(user['id']),
+                              ),
                     );
                 }).toList(),
               ),

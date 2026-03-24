@@ -90,7 +90,6 @@ class _AppDrawer extends StatelessWidget {
             ),
           ),
 
-          // Trainee menu
           if (isTrainee) ...[
             _tile(context, Icons.dashboard, 'Dashboard', '/dashboard'),
             _tile(context, Icons.restaurant, 'Food Logging', '/food'),
@@ -103,7 +102,6 @@ class _AppDrawer extends StatelessWidget {
             _tile(context, Icons.notifications, 'Notifications', AppRouter.notifications),
           ],
 
-          // Trainer menu
           if (isTrainer) ...[
             _tile(context, Icons.people, 'My Students', '/trainer/students'),
             _tile(context, Icons.calendar_today, 'Calendar', '/trainer/calendar'),
@@ -112,7 +110,6 @@ class _AppDrawer extends StatelessWidget {
             _tile(context, Icons.notifications, 'Notifications', AppRouter.notifications),
           ],
 
-          // Admin menu
           if (isAdmin) ...[
             _tile(context, Icons.dashboard, 'Dashboard', '/admin/dashboard'),
             _tile(context, Icons.manage_accounts, 'Manage Trainers', '/admin/trainers'),
@@ -120,7 +117,6 @@ class _AppDrawer extends StatelessWidget {
             _tile(context, Icons.people, 'Users', '/admin/users'),
           ],
 
-          // Common
           _tile(context, Icons.settings, 'Settings', '/settings'),
           const Divider(),
           ListTile(
@@ -141,8 +137,11 @@ class _AppDrawer extends StatelessWidget {
       leading: Icon(icon, color: AppColors.textSecondary, size: 20),
       title: Text(label, style: const TextStyle(fontSize: 14)),
       onTap: () {
-        Navigator.pop(context);
-        context.go(route);
+        // FIX: Safely pop the drawer, then WAIT for the animation to finish before routing
+        Navigator.of(context).pop(); 
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (context.mounted) context.go(route);
+        });
       },
     );
   }

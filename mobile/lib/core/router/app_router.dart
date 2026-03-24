@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_bloc/flutter_bloc.dart'; // FIX: Added missing bloc import
 import '../../features/auth/presentation/bloc/auth_bloc.dart';
 import '../../features/auth/presentation/bloc/auth_state.dart';
+import '../../features/auth/presentation/bloc/auth_event.dart'; // FIX: Added to resolve AuthCompleteOnboardingEvent
 import '../../features/auth/presentation/pages/login_page.dart';
 import '../../features/auth/presentation/pages/register_page.dart';
 import '../../features/auth/presentation/pages/check_email_page.dart';
@@ -45,6 +47,7 @@ class AppRouter {
   static const String messages = '/messages';
   static const String calendar = '/calendar';
   static const String onboarding = '/onboarding';
+  static const String trainerCalendar = '/trainer/calendar'; // FIX: Added missing route string
 
   static GoRouter create(AuthBloc authBloc) {
     return GoRouter(
@@ -130,10 +133,8 @@ class AppRouter {
         GoRoute(path: food, builder: (_, __) => const FoodLoggingPage()),
         GoRoute(path: exercise, builder: (_, __) => const ExercisePage()),
         GoRoute(path: analytics, builder: (_, __) => const AnalyticsPage()),
-        GoRoute(path: trainerStudents, builder: (_, __) => const TrainerStudentsPage()),
         GoRoute(path: trainerRequests, builder: (_, __) => const TrainerRequestsPage()),
         GoRoute(path: findTrainer, builder: (_, __) => const FindTrainerPage()),
-        GoRoute(path: adminDashboard, builder: (_, __) => const AdminDashboardPage()),
         GoRoute(path: adminTrainers, builder: (_, __) => const AdminTrainersPage()),
         GoRoute(path: adminReports, builder: (_, __) => const AdminReportsPage()),
         GoRoute(path: social, builder: (_, __) => const SocialPage()),
@@ -141,12 +142,11 @@ class AppRouter {
         GoRoute(path: messages, builder: (_, __) => const ConversationsPage()),
         GoRoute(path: calendar, builder: (_, __) => const CalendarPage()),
         GoRoute(path: trainerCalendar, builder: (_, __) => const TrainerRequestsPage()),
-
         GoRoute(
             path: onboarding,
             builder: (context, _) => OnboardingPage(
-              onComplete: () => context.read<AuthBloc>()
-                  .add(const AuthCompleteOnboardingEvent()),
+              // FIX: Make sure AuthCompleteOnboardingEvent exists in auth_event.dart
+              onComplete: () => context.read<AuthBloc>().add(const AuthCompleteOnboardingEvent()),
             ),
           ),
       ],

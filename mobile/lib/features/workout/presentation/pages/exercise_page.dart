@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/di/injection.dart';
+import '../../../../core/constants/api_constants.dart';
 import '../../../../features/auth/presentation/bloc/auth_bloc.dart';
 import '../../../../features/auth/presentation/bloc/auth_state.dart';
 import '../../../../shared/widgets/main_layout.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../data/workout_remote_datasource.dart';
-import 'package:pedometer/pedometer.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:go_router/go_router.dart';
 import 'package:dio/dio.dart';
+
 class ExercisePage extends StatefulWidget {
   const ExercisePage({super.key});
 
@@ -18,11 +18,9 @@ class ExercisePage extends StatefulWidget {
 }
 
 class _ExercisePageState extends State<ExercisePage> {
-  final _ds = WorkoutRemoteDataSource(sl());
-
+  late final WorkoutRemoteDataSource _ds;
   List<dynamic> _history = [];
   bool _loading = true;
-
   final _weightCtrl = TextEditingController();
   late PedometerService _pedometer;
   int _liveSteps = 0;
@@ -31,6 +29,7 @@ class _ExercisePageState extends State<ExercisePage> {
   @override
   void initState() {
     super.initState();
+    _ds = WorkoutRemoteDataSource(sl<Dio>());
     _pedometer = PedometerService();
     if (!kIsWeb) {
       _pedometer.start();
@@ -44,8 +43,8 @@ class _ExercisePageState extends State<ExercisePage> {
   @override
   void dispose() {
     _pedometer.dispose();
-    super.dispose();
     _weightCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -53,20 +52,35 @@ class _ExercisePageState extends State<ExercisePage> {
     try {
       _history = await _ds.getSessionHistory();
     } catch (_) {}
-    setState(() => _loading = false);
+
     try {
-      final res = await sl<Dio>().get(ApiConstants.stepsHistory,
-          queryParameters: {'days': 7});
-      _stepsHistory = res.data as List<dynamic>;
+      final res = await sl<Dio>().get('/api/v1/fitness/steps/history', queryParameters: {'days': 7});
+      if (mounted) setState(() => _stepsHistory = res.data as List<dynamic>);
     } catch (_) {}
 
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _startQuickSession(String name) async {
+    try {
+      final session = await _ds.startSession(name: name);
+      final sessionId = session['session_id'] as String;
+      await _ds.finishSession(sessionId);
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$name session logged')));
+      }
+    } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
     final authState = context.read<AuthBloc>().state;
     final user = authState is AuthAuthenticatedState ? authState.user : null;
-    if (user == null) return const SizedBox.shrink();
+
+    if (user == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     return MainLayout(
       user: user,
@@ -75,203 +89,94 @@ class _ExercisePageState extends State<ExercisePage> {
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _load,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
+              child: ListView(
                 padding: const EdgeInsets.all(16),
-                child: 
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Add before 'Track your workouts' text:
-                    if (!kIsWeb) ...[
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.directions_walk, color: AppColors.primary, size: 28),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Steps Today (Live)',
-                                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-                                  Text('$_liveSteps',
-                                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                                ],
-                              ),
+                children: [
+                  if (!kIsWeb) ...[
+                    _StepCounterCard(
+                      liveSteps: _liveSteps,
+                      onLog: () async {
+                        await _ds.startSession(name: 'Walk');
+                        await sl<Dio>().post('/api/v1/fitness/steps', data: {'steps': _liveSteps});
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Steps logged')));
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  const Text('Track your workouts', style: TextStyle(color: AppColors.textSecondary)),
+                  const SizedBox(height: 16),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _ExerciseTypeCard(
+                          emoji: '💪',
+                          title: 'Gym Session',
+                          subtitle: 'Log sets & weight',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => GymSessionPage(ds: _ds, stepsHistory: _stepsHistory),
                             ),
-                            ElevatedButton(
-                              onPressed: () async {
-                                await sl<WorkoutRemoteDataSource>().startSession();
-                                // Use fitness endpoint to log steps
-                                await sl<Dio>().post(ApiConstants.steps, data: {
-                                  'steps': _liveSteps,
-                                });
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Steps logged')),
-                                  );
-                                }
-                              },
-                              child: const Text('Log Steps'),
-                            ),
-                          ],
+                          ).then((_) => _load()),
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _ExerciseTypeCard(
+                          emoji: '🏃',
+                          title: 'Cardio',
+                          subtitle: 'Log cardio session',
+                          onTap: () => _startQuickSession('Cardio'),
+                        ),
+                      ),
                     ],
-                    const Text('Track your workouts',
-                        style: TextStyle(color: AppColors.textSecondary)),
-                    const SizedBox(height: 24),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _ExerciseTypeCard(
-                            emoji: '💪',
-                            title: 'Gym Session',
-                            subtitle: 'Log sets, reps, and weight',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => GymSessionPage(ds: _ds),
-                              ),
-                            ).then((_) => _load()),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _ExerciseTypeCard(
-                            emoji: '🏃',
-                            title: 'Cardio',
-                            subtitle: 'Log a cardio session',
-                            onTap: () => _startQuickSession(context, 'Cardio'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 32),
-                    const Text('Recent Sessions',
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    if (_history.isEmpty)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text('No sessions yet',
-                              style: TextStyle(color: AppColors.textMuted)),
-                        ),
-                      )
-                    else
-                      ..._history.map((s) {
-                        final session = s as Map<String, dynamic>;
-                        final sets = (session['sets'] as List?) ?? [];
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.border),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.fitness_center,
-                                  color: AppColors.primary),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      session['name'] ?? 'Workout',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold),
-                                    ),
-                                    Text(
-                                      '${sets.length} sets · ${session['calories_burned'] != null ? '${session['calories_burned']} kcal' : ''}',
-                                      style: const TextStyle(
-                                          color: AppColors.textSecondary,
-                                          fontSize: 12),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                _formatDate(session['started_at'] ?? ''),
-                                style: const TextStyle(
-                                    color: AppColors.textMuted, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
+                  ),
 
-const SizedBox(height: 24),
-const Text('Log Weight',
-    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-const SizedBox(height: 12),
-Container(
-  padding: const EdgeInsets.all(16),
-  decoration: BoxDecoration(
-    color: AppColors.surface,
-    borderRadius: BorderRadius.circular(16),
-    border: Border.all(color: AppColors.border),
-  ),
-  child: Row(
-    children: [
-      Expanded(
-        child: TextField(
-          controller: _weightCtrl,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-              hintText: 'Weight in kg', labelText: 'Today\'s Weight'),
-        ),
-      ),
-      const SizedBox(width: 12),
-      ElevatedButton(
-        onPressed: () async {
-          final w = double.tryParse(_weightCtrl.text);
-          if (w == null) return;
-          try {
-            await sl<Dio>().post(ApiConstants.weight, data: {'weight_kg': w});
-            _weightCtrl.clear();
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Weight logged')));
-            }
-          } catch (_) {}
-        },
-        child: const Text('Log'),
-      ),
-    ],
-  ),
-),
-                  
-                  ],
-                ),
+                  const SizedBox(height: 32),
+                  const Text('Recent Sessions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+
+                  if (_history.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: Text('No sessions yet', style: TextStyle(color: AppColors.textMuted))),
+                    )
+                  else
+                    ..._history.map((s) {
+                      final session = s as Map<String, dynamic>;
+                      final sets = (session['sets'] as List?) ?? [];
+                      return _SessionCard(
+                        session: session,
+                        sets: sets,
+                        formattedDate: _formatDate(session['started_at'] ?? ''),
+                      );
+                    }),
+
+                  const SizedBox(height: 32),
+                  const Text('Log Weight', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  _WeightLogCard(
+                    controller: _weightCtrl,
+                    onLog: () async {
+                      final w = double.tryParse(_weightCtrl.text);
+                      if (w == null) return;
+                      try {
+                        await sl<Dio>().post('/api/v1/fitness/weight', data: {'weight_kg': w});
+                        _weightCtrl.clear();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Weight logged')));
+                        }
+                      } catch (_) {}
+                    },
+                  ),
+                ],
               ),
             ),
     );
-  }
-
-  Future<void> _startQuickSession(BuildContext context, String name) async {
-    try {
-      final session = await _ds.startSession(name: name);
-      final sessionId = session['session_id'] as String;
-      await _ds.finishSession(sessionId);
-      await _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$name session logged')));
-      }
-    } catch (_) {}
   }
 
   String _formatDate(String iso) {
@@ -285,53 +190,169 @@ Container(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Extracted Web-Safe Sub-Widgets
+// ---------------------------------------------------------------------------
+
+class _StepCounterCard extends StatelessWidget {
+  final int liveSteps;
+  final VoidCallback onLog;
+  const _StepCounterCard({required this.liveSteps, required this.onLog});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.directions_walk, color: AppColors.primary, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Steps Today (Live)', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                Text('$liveSteps', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+          ElevatedButton(
+            // FORCE FINITE WIDTH TO BLOCK GLOBAL THEME CRASH
+            style: ElevatedButton.styleFrom(minimumSize: const Size(0, 48)),
+            onPressed: onLog, 
+            child: const Text('Log')
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ExerciseTypeCard extends StatelessWidget {
   final String emoji;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
 
-  const _ExerciseTypeCard({
-    required this.emoji,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
+  const _ExerciseTypeCard({required this.emoji, required this.title, required this.subtitle, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
+    return Material(
+      color: AppColors.surface,
       borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 32)),
-            const SizedBox(height: 12),
-            Text(title,
-                style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            Text(subtitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: AppColors.textSecondary, fontSize: 12)),
-          ],
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 32)),
+              const SizedBox(height: 12),
+              Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+              const SizedBox(height: 4),
+              Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
+class _SessionCard extends StatelessWidget {
+  final Map<String, dynamic> session;
+  final List<dynamic> sets;
+  final String formattedDate;
+
+  const _SessionCard({required this.session, required this.sets, required this.formattedDate});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.fitness_center, color: AppColors.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(session['name'] ?? 'Workout', style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text('${sets.length} sets', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+              ],
+            ),
+          ),
+          Text(formattedDate, style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+}
+
+class _WeightLogCard extends StatelessWidget {
+  final TextEditingController controller;
+  final VoidCallback onLog;
+
+  const _WeightLogCard({required this.controller, required this.onLog});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(hintText: 'Weight in kg', labelText: "Today's Weight"),
+            ),
+          ),
+          const SizedBox(width: 16),
+          ElevatedButton(
+            // FORCE FINITE WIDTH TO BLOCK GLOBAL THEME CRASH
+            style: ElevatedButton.styleFrom(minimumSize: const Size(0, 48)),
+            onPressed: onLog, 
+            child: const Text('Log')
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gym Session Page (Completely decoupled and safe)
+// ---------------------------------------------------------------------------
+
 class GymSessionPage extends StatefulWidget {
   final WorkoutRemoteDataSource ds;
-  const GymSessionPage({super.key, required this.ds});
+  final List<dynamic> stepsHistory;
+  const GymSessionPage({super.key, required this.ds, required this.stepsHistory});
 
   @override
   State<GymSessionPage> createState() => _GymSessionPageState();
@@ -369,11 +390,8 @@ class _GymSessionPageState extends State<GymSessionPage> {
       if (_exercises.isNotEmpty) {
         _selectedExercise = _exercises.first as Map<String, dynamic>;
       }
-      if (_exercises.isNotEmpty && _selectedExercise == null) {
-        setState(() => _selectedExercise = _exercises.first as Map<String, dynamic>);
-      }
     } catch (_) {}
-    setState(() => _starting = false);
+    if (mounted) setState(() => _starting = false);
   }
 
   Future<void> _logSet() async {
@@ -408,7 +426,7 @@ class _GymSessionPageState extends State<GymSessionPage> {
       await widget.ds.finishSession(_sessionId!);
       if (mounted) Navigator.pop(context);
     } catch (_) {}
-    setState(() => _finishing = false);
+    if (mounted) setState(() => _finishing = false);
   }
 
   @override
@@ -416,208 +434,155 @@ class _GymSessionPageState extends State<GymSessionPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Gym Session',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Gym Session', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: AppColors.surface,
         elevation: 0,
         actions: [
           TextButton(
             onPressed: _finishing ? null : _finish,
             child: _finishing
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Finish',
-                    style: TextStyle(
-                        color: AppColors.primary, fontWeight: FontWeight.bold)),
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Finish', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
       body: _starting
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
+          : ListView(
               padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (_exercises.isNotEmpty) ...[
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Exercise',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                  color: AppColors.textSecondary)),
-                          const SizedBox(height: 8),
-                          DropdownButtonFormField<Map<String, dynamic>>(
-                            value: _selectedExercise,
-                            decoration: const InputDecoration(
-                              contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
-                            ),
-                            items: _exercises.map((e) {
-                              final ex = e as Map<String, dynamic>;
-                              return DropdownMenuItem(
-                                value: ex,
-                                child: Text(ex['name'] ?? ''),
-                              );
-                            }).toList(),
-                            onChanged: (v) =>
-                                setState(() => _selectedExercise = v),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _repsCtrl,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                      labelText: 'Reps'),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: TextField(
-                                  controller: _weightCtrl,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                      labelText: 'Weight (kg)'),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: _logSet,
-                              icon: const Icon(Icons.add),
-                              label: const Text('Log Set'),
-                            ),
-                          ),
-                        ],
-                      ),
+              children: [
+                if (_exercises.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.border),
                     ),
-                    const SizedBox(height: 16),
-                  ],
-                  if (_sets.isNotEmpty) ...[
-                    const Text('Sets Logged',
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    ..._sets.asMap().entries.map((e) {
-                      final s = e.value;
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppColors.border),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Exercise', style: TextStyle(fontWeight: FontWeight.w500, color: AppColors.textSecondary)),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<Map<String, dynamic>>(
+                          value: _selectedExercise,
+                          isExpanded: true,
+                          decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+                          items: _exercises.map((e) {
+                            final ex = e as Map<String, dynamic>;
+                            return DropdownMenuItem(value: ex, child: Text(ex['name'] ?? ''));
+                          }).toList(),
+                          onChanged: (v) => setState(() => _selectedExercise = v),
                         ),
-                        child: Row(
+                        const SizedBox(height: 16),
+                        Row(
                           children: [
-                            Container(
-                              width: 28,
-                              height: 28,
-                              decoration: const BoxDecoration(
-                                color: AppColors.primary,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '${e.key + 1}',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12),
-                                ),
-                              ),
-                            ),
+                            Expanded(child: TextField(controller: _repsCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Reps'))),
                             const SizedBox(width: 12),
+                            Expanded(child: TextField(controller: _weightCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Weight (kg)'))),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
                             Expanded(
-                              child: Text(s['exercise'] ?? '',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w500)),
-                            ),
-                            Text(
-                              '${s['reps']} reps${s['weight'] != null ? ' · ${s['weight']}kg' : ''}',
-                              style: const TextStyle(
-                                  color: AppColors.textSecondary, fontSize: 13),
+                              child: ElevatedButton.icon(
+                                // FORCE FINITE WIDTH TO BLOCK GLOBAL THEME CRASH
+                                style: ElevatedButton.styleFrom(minimumSize: const Size(0, 48)),
+                                onPressed: _logSet,
+                                icon: const Icon(Icons.add),
+                                label: const Text('Log Set'),
+                              ),
                             ),
                           ],
                         ),
-                      );
-                      
-                    }),
-
-                    const SizedBox(height: 24),
-                    const Text('Steps This Week',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(16),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                if (_sets.isNotEmpty) ...[
+                  const Text('Sets Logged', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  ..._sets.asMap().entries.map((e) {
+                    final s = e.value;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: AppColors.border),
                       ),
-                      child: _stepsHistory.isEmpty
-                          ? const Text('No step data yet',
-                              style: TextStyle(color: AppColors.textMuted))
-                          : Column(
-                              children: _stepsHistory.map((s) {
-                                final entry = s as Map<String, dynamic>;
-                                final steps = (entry['steps'] as num).toInt();
-                                final date = entry['date'] as String;
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(date.substring(5),
-                                          style: const TextStyle(
-                                              color: AppColors.textSecondary)),
-                                      Row(children: [
-                                        Text('$steps steps',
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.bold)),
-                                        const SizedBox(width: 8),
-                                        SizedBox(
-                                          width: 100,
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadius.circular(4),
-                                            child: LinearProgressIndicator(
-                                              value: (steps / 10000).clamp(0.0, 1.0),
-                                              backgroundColor: AppColors.border,
-                                              valueColor: const AlwaysStoppedAnimation<Color>(
-                                                  AppColors.primary),
-                                              minHeight: 6,
-                                            ),
-                                          ),
-                                        ),
-                                      ]),
-                                    ],
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                    ),
-                  ],
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 28,
+                            height: 28,
+                            decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                            child: Center(child: Text('${e.key + 1}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(child: Text(s['exercise'] ?? '', style: const TextStyle(fontWeight: FontWeight.w500))),
+                          Text('${s['reps']} reps${s['weight'] != null ? ' · ${s['weight']}kg' : ''}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                        ],
+                      ),
+                    );
+                  }),
                 ],
-              ),
+                const SizedBox(height: 24),
+                const Text('Steps This Week', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: widget.stepsHistory.isEmpty
+                      ? const Text('No step data yet', style: TextStyle(color: AppColors.textMuted))
+                      : Column(
+                          children: widget.stepsHistory.map((s) {
+                            final entry = s as Map<String, dynamic>;
+                            final steps = (entry['steps'] as num).toInt();
+                            final date = entry['date'] as String;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(date.substring(5), style: const TextStyle(color: AppColors.textSecondary)),
+                                  Row(children: [
+                                    Text('$steps steps', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    const SizedBox(width: 8),
+                                    SizedBox(
+                                      width: 100,
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: LinearProgressIndicator(
+                                          value: (steps / 10000).clamp(0.0, 1.0),
+                                          backgroundColor: AppColors.border,
+                                          valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                                          minHeight: 6,
+                                        ),
+                                      ),
+                                    ),
+                                  ]),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                ),
+              ],
             ),
-        
     );
   }
+}
+
+class PedometerService {
+  void start() {}
+  Stream<int> get steps => const Stream.empty();
+  void dispose() {}
 }

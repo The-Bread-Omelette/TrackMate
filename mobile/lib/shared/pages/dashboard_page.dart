@@ -17,7 +17,10 @@ class DashboardPage extends StatelessWidget {
     final authState = context.read<AuthBloc>().state;
     final user = authState is AuthAuthenticatedState ? authState.user : null;
 
-    if (user == null) return const SizedBox.shrink();
+    // FIX: Never return SizedBox.shrink() as a root widget! 
+    if (user == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     return BlocProvider(
       create: (_) => sl<DashboardBloc>()..add(const DashboardLoad()),
@@ -71,8 +74,11 @@ class _DashboardBody extends StatelessWidget {
                 _CalorieCard(data: data),
                 const SizedBox(height: 16),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _StatsCard(data: data),
+                    Expanded(child: _WaterCard(data: data)), 
+                    const SizedBox(width: 16),
+                    Expanded(child: _StatsCard(data: data)),
                   ],
                 ),
               ],
@@ -98,6 +104,7 @@ class _StepsCard extends StatelessWidget {
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           const Text('Daily Steps',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
@@ -116,6 +123,7 @@ class _StepsCard extends StatelessWidget {
                 ),
               ),
               Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     data.steps.toString(),
@@ -177,6 +185,7 @@ class _CalorieCard extends StatelessWidget {
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min, 
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('Calorie Balance',
@@ -253,6 +262,7 @@ class _WaterCard extends StatelessWidget {
           border: Border.all(color: AppColors.border),
         ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.water_drop, color: Colors.blue, size: 32),
             const SizedBox(height: 16),
@@ -325,6 +335,7 @@ class _StatsCard extends StatelessWidget {
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           const Icon(Icons.fitness_center, color: Colors.orange, size: 32),
           const SizedBox(height: 16),
