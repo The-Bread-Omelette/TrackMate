@@ -43,7 +43,6 @@ class TrainerService:
         )
         db.add(app)
 
-        # Update profile with phone number and hourly rate
         from app.services.profile_service import profile_service
         from app.schemas.profile import ProfileUpdateRequest
         await profile_service.update_profile(db, user, ProfileUpdateRequest(
@@ -62,7 +61,7 @@ class TrainerService:
         self, db: AsyncSession, trainee: User, trainer_id: uuid.UUID, goal: str
     ) -> TrainerRequest:
         if trainee.trainer_id:
-            raise ConflictError("You already have a trainer")
+            raise ConflictError("You already have an active trainer.")
 
         trainer_result = await db.execute(
             select(User).where(User.id == trainer_id, User.role == UserRole.TRAINER)
@@ -119,6 +118,19 @@ class TrainerService:
             trainee = trainee_result.scalar_one_or_none()
             if trainee:
                 trainee.trainer_id = trainer.id
+                
+                # 🔥 NEW: Automatically reject any other pending requests from this trainee
+                await db.execute(
+                    TrainerRequest.__table__.update()
+                    .where(
+                        and_(
+                            TrainerRequest.trainee_id == trainee.id,
+                            TrainerRequest.status == TrainerRequestStatus.PENDING,
+                            TrainerRequest.id != req.id
+                        )
+                    )
+                    .values(status=TrainerRequestStatus.REJECTED)
+                )
                 await db.flush()
 
             await notification_service.create(
@@ -136,6 +148,39 @@ class TrainerService:
             )
 
         return req
+
+    async def quit_trainer(self, db: AsyncSession, trainee: User) -> None:
+        if not trainee.trainer_id:
+            raise ConflictError("You do not have an active trainer to quit.")
+            
+        old_trainer_id = trainee.trainer_id
+        trainee.trainer_id = None
+        
+        # Mark active request as rejected so they can re-apply later
+        await db.execute(
+            TrainerRequest.__table__.update()
+            .where(
+                and_(
+                    TrainerRequest.trainee_id == trainee.id,
+                    TrainerRequest.trainer_id == old_trainer_id,
+                    TrainerRequest.status == TrainerRequestStatus.ACCEPTED
+                )
+            )
+            .values(status=TrainerRequestStatus.REJECTED)
+        )
+        
+        # Add a system message in the chat
+        try:
+            from app.services.messaging_service import messaging_service
+            conv = await messaging_service.get_or_create_conversation(db, trainee.id, old_trainer_id)
+            await messaging_service.save_message(
+                db, conv.id, trainee.id, 
+                "System: The training relationship has been terminated."
+            )
+        except Exception:
+            pass 
+
+        await db.flush()
 
     async def get_trainer_requests(
         self, db: AsyncSession, trainer_id: uuid.UUID
@@ -178,6 +223,13 @@ class TrainerService:
             "streak": streak,
             "excellence_pct": min(excellence, 100),
             "needs_attention": needs_attention,
+            # 🔥 NEW: Send actual profile details to the trainer
+            "height_cm": user.profile.height_cm if user.profile else None,
+            "weight_kg": user.profile.weight_kg if user.profile else None,
+            "daily_step_goal": user.profile.daily_step_goal if user.profile else None,
+            "daily_calorie_goal": user.profile.daily_calorie_goal if user.profile else None,
+            "bio": user.profile.bio if user.profile else None,
+            "activity_level": user.profile.activity_level if user.profile else None,
         }
 
     async def get_student_detail(
@@ -311,6 +363,5 @@ class TrainerService:
             }
             for t in trainers
         ]
-
 
 trainer_service = TrainerService()

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/di/injection.dart';
+import '../../core/constants/api_constants.dart';
 import '../../features/auth/presentation/bloc/auth_bloc.dart';
 import '../../features/auth/presentation/bloc/auth_state.dart';
 import '../../features/dashboard/presentation/bloc/dashboard_bloc.dart';
@@ -8,7 +9,11 @@ import '../../features/dashboard/presentation/bloc/dashboard_event.dart';
 import '../../features/dashboard/presentation/bloc/dashboard_state.dart';
 import '../../shared/widgets/main_layout.dart';
 import '../theme/app_theme.dart';
-
+import '../../features/trainer/data/trainer_remote_datasource.dart';
+import '../../features/messaging/data/messaging_remote_datasource.dart';
+import '../../features/messaging/presentation/pages/chat_page.dart';
+import '../../features/trainer/presentation/pages/find_trainer_page.dart';
+import '../../features/trainer/presentation/pages/coaching_hub_page.dart';
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
 
@@ -17,7 +22,6 @@ class DashboardPage extends StatelessWidget {
     final authState = context.read<AuthBloc>().state;
     final user = authState is AuthAuthenticatedState ? authState.user : null;
 
-    // FIX: Never return SizedBox.shrink() as a root widget! 
     if (user == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -27,17 +31,21 @@ class DashboardPage extends StatelessWidget {
       child: MainLayout(
         user: user,
         title: 'Dashboard',
-        child: const _DashboardBody(),
+        child: _DashboardBody(user: user),
       ),
     );
   }
 }
 
 class _DashboardBody extends StatelessWidget {
-  const _DashboardBody();
+  final dynamic user; 
+  const _DashboardBody({required this.user});
 
   @override
   Widget build(BuildContext context) {
+    // 🔥 CRITICAL FIX: Robust check for the Trainer role enum
+    final isTrainer = user.role.toString().toLowerCase().contains('trainer');
+
     return BlocBuilder<DashboardBloc, DashboardState>(
       builder: (context, state) {
         if (state is DashboardLoading || state is DashboardInitial) {
@@ -62,13 +70,15 @@ class _DashboardBody extends StatelessWidget {
         final data = (state as DashboardLoaded).data;
 
         return RefreshIndicator(
-          onRefresh: () async =>
-              context.read<DashboardBloc>().add(const DashboardLoad()),
+          onRefresh: () async => context.read<DashboardBloc>().add(const DashboardLoad()),
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
+                // 🔥 Pass the robust boolean down
+                _MyTrainerCard(isTrainer: isTrainer), 
+                if (!isTrainer) const SizedBox(height: 16),
                 _StepsCard(data: data),
                 const SizedBox(height: 16),
                 _CalorieCard(data: data),
@@ -344,6 +354,166 @@ class _StatsCard extends StatelessWidget {
           const Text('Workouts', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
           const SizedBox(height: 4),
           const Text('this week', style: TextStyle(color: AppColors.textMuted, fontSize: 10)),
+        ],
+      ),
+    );
+  }
+}
+
+class _MyTrainerCard extends StatefulWidget {
+  final bool isTrainer;
+  const _MyTrainerCard({required this.isTrainer});
+
+  @override
+  State<_MyTrainerCard> createState() => _MyTrainerCardState();
+}
+
+class _MyTrainerCardState extends State<_MyTrainerCard> {
+  Map<String, dynamic>? _trainer;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.isTrainer) {
+      _loadTrainer();
+    } else {
+      _loading = false;
+    }
+  }
+
+  Future<void> _loadTrainer() async {
+    try {
+      final ds = sl<TrainerRemoteDataSource>();
+      final trainer = await ds.getMyTrainer();
+      if (mounted) setState(() => _trainer = trainer);
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _quitTrainer() async {
+    try {
+      await sl<TrainerRemoteDataSource>().dio.post('${ApiConstants.apiVersion}/trainer/quit');
+      if (mounted) {
+        setState(() => _trainer = null);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You have left your trainer.')));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to quit trainer.')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 🔥 CRITICAL FIX: Ensure the Trainer NEVER sees this
+    if (widget.isTrainer) {
+      return const SizedBox.shrink();
+    }
+
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    
+    // IF THEY DON'T HAVE A TRAINER, SHOW THE "HIRE" WIDGET
+    if (_trainer == null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+        ),
+        child: Column(
+          children: [
+            const Icon(Icons.person_search, size: 32, color: AppColors.primary),
+            const SizedBox(height: 8),
+            const Text('No Active Trainer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const Text('Get personalized guidance and plans.', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const FindTrainerPage()))
+                    .then((_) => _loadTrainer());
+              },
+              child: const Text('Find a Trainer'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // IF THEY HAVE A TRAINER, SHOW THE ACTIVE WIDGET
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: Colors.white,
+            child: Text((_trainer!['full_name'] as String? ?? 'T')[0].toUpperCase(), style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 20)),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Your Assigned Trainer', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                Text(_trainer!['full_name'] ?? 'Unknown', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chat_bubble, color: Colors.white),
+            style: IconButton.styleFrom(backgroundColor: Colors.white.withOpacity(0.2)),
+            onPressed: () async {
+              try {
+                final msgDs = sl<MessagingRemoteDataSource>();
+                final trainerId = _trainer!['id'];
+                final convData = await msgDs.startConversation(trainerId);
+                if (mounted) {
+                  final authState = context.read<AuthBloc>().state as AuthAuthenticatedState;
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => ChatPage(conversationId: convData['conversation_id'], otherUserId: trainerId, otherUserName: _trainer!['full_name'], ds: msgDs, currentUserId: authState.user.id)));
+                }
+              } catch (_) {}
+            },
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            onSelected: (val) {
+              if (val == 'profile') {
+                // 🔥 Navigate to the Coaching Hub!
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => CoachingHubPage(trainerInfo: _trainer!)),
+                );
+              } else if (val == 'quit') {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Quit Trainer?'),
+                    content: const Text('Are you sure you want to stop working with this trainer?'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                      TextButton(
+                        onPressed: () { Navigator.pop(ctx); _quitTrainer(); },
+                        child: const Text('Quit', style: TextStyle(color: AppColors.error)),
+                      ),
+                    ],
+                  ),
+                );
+              }
+            },
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(value: 'profile', child: Text('View Profile')),
+              const PopupMenuItem(value: 'quit', child: Text('Quit Trainer', style: TextStyle(color: AppColors.error))),
+            ],
+          ),
         ],
       ),
     );

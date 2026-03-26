@@ -85,6 +85,13 @@ class Message(Base):
         index=True,
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # 🔥 NEW: WhatsApp Features
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reply_to_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
+    )
+    
     status: Mapped[MessageStatus] = mapped_column(
         SAEnum(MessageStatus, name="messagestatus",
                values_callable=lambda x: [e.value for e in x]),
@@ -109,3 +116,5 @@ class Message(Base):
         "Conversation", back_populates="messages"
     )
     sender: Mapped["User"] = relationship("User")
+    # 🔥 NEW: Relationship for resolving the replied message
+    reply_to: Mapped["Message | None"] = relationship("Message", remote_side=[id])

@@ -16,8 +16,8 @@ class ConversationsPage extends StatefulWidget {
 }
 
 class _ConversationsPageState extends State<ConversationsPage> {
-  final _ds = MessagingRemoteDataSource(sl());
-  List<dynamic> _convos = [];
+  final _ds = sl<MessagingRemoteDataSource>();
+  List<dynamic> _conversations = [];
   bool _loading = true;
 
   @override
@@ -27,106 +27,88 @@ class _ConversationsPageState extends State<ConversationsPage> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     try {
-      _convos = await _ds.getConversations();
+      final convos = await _ds.getConversations();
+      if (mounted) setState(() => _conversations = convos);
     } catch (_) {}
-    setState(() => _loading = false);
+    if (mounted) setState(() => _loading = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    final user =
-        (context.read<AuthBloc>().state as AuthAuthenticatedState).user;
+    final user = (context.read<AuthBloc>().state as AuthAuthenticatedState).user;
 
     return MainLayout(
       user: user,
       title: 'Messages',
       child: _loading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: _convos.isEmpty
-                  ? const Center(
-                      child: Text('No conversations yet',
-                          style: TextStyle(color: AppColors.textMuted)))
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _convos.length,
-                      itemBuilder: (context, i) {
-                        final c = _convos[i] as Map<String, dynamic>;
-                        final other =
-                            c['other_user'] as Map<String, dynamic>? ?? {};
-                        final last =
-                            c['last_message'] as Map<String, dynamic>?;
-                        final unread = (c['unread_count'] as num?)?.toInt() ?? 0;
+          : _conversations.isEmpty
+              ? const Center(
+                  child: Text('No messages yet.', style: TextStyle(color: AppColors.textMuted)))
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView.separated(
+                    itemCount: _conversations.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, i) {
+                      final c = _conversations[i];
+                      final otherUser = c['other_user'] ?? {};
+                      final lastMsg = c['last_message'];
+                      final unread = c['unread_count'] as int? ?? 0;
 
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.border),
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        leading: CircleAvatar(
+                          backgroundColor: AppColors.primary.withOpacity(0.1),
+                          radius: 24,
+                          child: Text(
+                            (otherUser['full_name']?[0] ?? 'U').toUpperCase(),
+                            style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
                           ),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  AppColors.primary.withOpacity(0.1),
-                              child: Text(
-                                (other['full_name'] as String? ?? 'U')[0]
-                                    .toUpperCase(),
-                                style: const TextStyle(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.bold),
+                        ),
+                        title: Text(
+                          otherUser['full_name'] ?? 'Unknown User',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: lastMsg != null
+                            ? Text(
+                                lastMsg['content'] ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: unread > 0 ? AppColors.textPrimary : AppColors.textMuted,
+                                  fontWeight: unread > 0 ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              )
+                            : const Text('No messages yet', style: TextStyle(fontStyle: FontStyle.italic)),
+                        trailing: unread > 0
+                            ? CircleAvatar(
+                                radius: 10,
+                                backgroundColor: AppColors.primary,
+                                child: Text(unread.toString(), style: const TextStyle(color: Colors.white, fontSize: 10)),
+                              )
+                            : null,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ChatPage(
+                                conversationId: c['conversation_id'],
+                                otherUserId: otherUser['id'],
+                                otherUserName: otherUser['full_name'],
+                                ds: _ds,
+                                currentUserId: user.id,
                               ),
                             ),
-                            title: Text(other['full_name'] ?? '',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold)),
-                            subtitle: last != null
-                                ? Text(
-                                    last['content'] ?? '',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                        color: AppColors.textSecondary,
-                                        fontSize: 13),
-                                  )
-                                : null,
-                            trailing: unread > 0
-                                ? Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: const BoxDecoration(
-                                      color: AppColors.primary,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Text('$unread',
-                                        style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold)),
-                                  )
-                                : null,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ChatPage(
-                                  conversationId:
-                                      c['conversation_id'] as String,
-                                  otherUserId:
-                                      other['id'] as String? ?? '',
-                                  otherUserName:
-                                      other['full_name'] as String? ?? '',
-                                  ds: _ds,
-                                  currentUserId: user.id,
-                                ),
-                              ),
-                            ).then((_) => _load()),
-                          ),
-                        );
-                      },
-                    ),
-            ),
+                          ).then((_) => _load()); // Refresh unread counts when returning
+                        },
+                      );
+                    },
+                  ),
+                ),
     );
   }
 }

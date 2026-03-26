@@ -16,7 +16,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<AuthResendVerificationEvent>(_onResendVerification);
     on<AuthVerifyEmailEvent>(_onVerifyEmail);
     on<AuthCompleteOnboardingEvent>(_onCompleteOnboarding);
-
   }
 
   Future<void> _onVerifyEmail(
@@ -33,22 +32,24 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         emit(AuthErrorState(failure.message));
         emit(AuthUnverifiedState(email: event.email));
       },
-      
-(user) => emit(const AuthOnboardingState()),
+      (user) => emit(const AuthOnboardingState()),
     );
   }
 
-
-Future<void> _onCompleteOnboarding(
-  AuthCompleteOnboardingEvent event,
-  Emitter<AuthState> emit,
-) async {
-  final result = await repository.getCurrentUser();
-  result.fold(
-    (failure) => emit(const AuthUnauthenticatedState()),
-    (user) => emit(AuthAuthenticatedState(user)),
-  );
-}
+  Future<void> _onCompleteOnboarding(
+    AuthCompleteOnboardingEvent event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(const AuthLoadingState()); // Let UI know we are checking session
+    final result = await repository.getCurrentUser();
+    result.fold(
+      (failure) {
+        emit(AuthErrorState(failure.message)); // Emit error if it fails
+        emit(const AuthUnauthenticatedState());
+      },
+      (user) => emit(AuthAuthenticatedState(user)), // Triggers the router redirect!
+    );
+  }
 
   Future<void> _onLogin(
     AuthLoginEvent event,

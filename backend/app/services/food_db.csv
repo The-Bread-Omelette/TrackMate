@@ -1,0 +1,93 @@
+name,calories,protein,carbs,fat,image
+Rice,130,2.4,28.2,0.3,/foods/rice.jpg
+Brown Rice,111,2.6,23,0.9,/foods/brown_rice.jpg
+Chapati,297,9.6,49,1.7,/foods/chapati.jpg
+Naan,310,9,55,6,/foods/naan.jpg
+Paratha,330,7,45,14,/foods/paratha.jpg
+Idli,146,4.5,28,0.7,/foods/idli.jpg
+Dosa,168,4.5,30,3.7,/foods/dosa.jpg
+Upma,150,4,26,3,/foods/upma.jpg
+Poha,130,2.5,28,2,/foods/poha.jpg
+Pongal,160,5,28,4,/foods/pongal.jpg
+Chicken Breast,165,31,0,3.6,/foods/chicken_breast.jpg
+Chicken Curry,240,18,5,16,/foods/chicken_curry.jpg
+Mutton Curry,294,25,2,21,/foods/mutton_curry.jpg
+Fish Curry,210,22,4,12,/foods/fish_curry.jpg
+Boiled Egg,155,13,1.1,11,/foods/egg.jpg
+Paneer,265,18,1.2,20,/foods/paneer.jpg
+Tofu,76,8,1.9,4.8,/foods/tofu.jpg
+Dal,116,9,20,0.4,/foods/dal.jpg
+Chole,164,9,27,2.6,/foods/chole.jpg
+Rajma,127,8.7,22.8,0.5,/foods/rajma.jpg
+Moong Dal,105,7,19,0.4,/foods/moong_dal.jpg
+Masoor Dal,116,9,20,0.4,/foods/masoor_dal.jpg
+Urad Dal,341,25,59,1.6,/foods/urad_dal.jpg
+Sambar,70,3,12,1.5,/foods/sambar.jpg
+Rasam,35,1,6,0.5,/foods/rasam.jpg
+Curd,59,10,3.6,0.4,/foods/curd.jpg
+Buttermilk,40,3,5,1,/foods/buttermilk.jpg
+Milk,60,3.2,5,3.3,/foods/milk.jpg
+Cheese,402,25,1.3,33,/foods/cheese.jpg
+Butter,717,0.9,0.1,81,/foods/butter.jpg
+Ghee,900,0,0,100,/foods/ghee.jpg
+Banana,89,1.1,23,0.3,/foods/banana.jpg
+Apple,52,0.3,14,0.2,/foods/apple.jpg
+Orange,47,0.9,12,0.1,/foods/orange.jpg
+Mango,60,0.8,15,0.4,/foods/mango.jpg
+Papaya,43,0.5,11,0.3,/foods/papaya.jpg
+Pineapple,50,0.5,13,0.1,/foods/pineapple.jpg
+Guava,68,2.6,14,1,/foods/guava.jpg
+Watermelon,30,0.6,8,0.2,/foods/watermelon.jpg
+Pomegranate,83,1.7,19,1.2,/foods/pomegranate.jpg
+Potato,77,2,17,0.1,/foods/potato.jpg
+Sweet Potato,86,1.6,20,0.1,/foods/sweet_potato.jpg
+Tomato,18,0.9,3.9,0.2,/foods/tomato.jpg
+Onion,40,1.1,9,0.1,/foods/onion.jpg
+Carrot,41,0.9,10,0.2,/foods/carrot.jpg
+Cucumber,15,0.7,3.6,0.1,/foods/cucumber.jpg
+Spinach,23,2.9,3.6,0.4,/foods/spinach.jpg
+Cabbage,25,1.3,6,0.1,/foods/cabbage.jpg
+Cauliflower,25,1.9,5,0.3,/foods/cauliflower.jpg
+Broccoli,34,2.8,7,0.4,/foods/broccoli.jpg
+Green Peas,81,5.4,14,0.4,/foods/peas.jpg
+Corn,96,3.4,21,1.5,/foods/corn.jpg
+Oats,389,17,66,7,/foods/oats.jpg
+Cornflakes,357,8,84,0.4,/foods/cornflakes.jpg
+White Bread,265,9,49,3.2,/foods/bread.jpg
+Brown Bread,247,13,41,4.2,/foods/brown_bread.jpg
+Peanut Butter,588,25,20,50,/foods/peanut_butter.jpg
+Peanuts,567,26,16,49,/foods/peanuts.jpg
+Almonds,579,21,22,50,/foods/almonds.jpg
+Cashews,553,18,30,44,/foods/cashews.jpg
+Walnuts,654,15,14,65,/foods/walnuts.jpg
+Pistachios,562,20,28,45,/foods/pistachios.jpg
+Sunflower Seeds,584,21,20,51,/foods/sunflower_seeds.jpg
+Chia Seeds,486,17,42,31,/foods/chia_seeds.jpg
+Flax Seeds,534,18,29,42,/foods/flax_seeds.jpg
+Honey,304,0.3,82,0,/foods/honey.jpg
+Sugar,387,0,100,0,/foods/sugar.jpg
+Jaggery,383,0.4,98,0.1,/foods/jaggery.jpg
+Dark Chocolate,546,4.9,61,31,/foods/dark_chocolate.jpg
+Ice Cream,207,3.5,24,11,/foods/ice_cream.jpg
+Pizza,266,11,33,10,/foods/pizza.jpg
+Burger,295,17,30,14,/foods/burger.jpg
+French Fries,312,3.4,41,15,/foods/fries.jpg
+Samosa,262,5,31,14,/foods/samosa.jpg
+Pakora,275,6,26,18,/foods/pakora.jpg
+Vada,300,7,40,12,/foods/vada.jpg
+Chicken Biryani,290,15,36,10,/foods/chicken_biryani.jpg
+Veg Biryani,220,5,40,6,/foods/veg_biryani.jpg
+Pulao,200,4,38,5,/foods/pulao.jpg
+Kheer,180,5,28,6,/foods/kheer.jpg
+Halwa,300,5,45,10,/foods/halwa.jpg
+Lassi,120,4,18,3,/foods/lassi.jpg
+Tea,60,2,10,1.5,/foods/tea.jpg
+Coffee,50,2,8,1,/foods/coffee.jpg
+Protein Shake,120,24,3,1,/foods/protein_shake.jpg
+Paneer Butter Masala,320,12,8,25,/foods/paneer_butter_masala.jpg
+Butter Chicken,490,28,6,38,/foods/butter_chicken.jpg
+Dal Makhani,210,9,22,10,/foods/dal_makhani.jpg
+Palak Paneer,230,11,8,18,/foods/palak_paneer.jpg
+Aloo Gobi,110,3,17,4,/foods/aloo_gobi.jpg
+Bhindi Masala,120,3,15,6,/foods/bhindi.jpg
+Vegetable Curry,95,3,12,4,/foods/veg_curry.jpg

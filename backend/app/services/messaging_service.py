@@ -14,7 +14,6 @@ class MessagingService:
     async def get_or_create_conversation(
         self, db: AsyncSession, user_a_id: uuid.UUID, user_b_id: uuid.UUID
     ) -> Conversation:
-        # Check if direct conversation already exists between these two users
         result = await db.execute(
             select(Conversation)
             .join(ConversationMember, ConversationMember.conversation_id == Conversation.id)
@@ -28,7 +27,6 @@ class MessagingService:
             if str(user_b_id) in member_ids and len(member_ids) == 2:
                 return conv
 
-        # Create new conversation
         conv = Conversation()
         db.add(conv)
         await db.flush()
@@ -78,7 +76,6 @@ class MessagingService:
         for membership in memberships:
             conv = membership.conversation
 
-            # Get last message
             last_msg_result = await db.execute(
                 select(Message)
                 .where(Message.conversation_id == conv.id)
@@ -87,7 +84,6 @@ class MessagingService:
             )
             last_msg = last_msg_result.scalar_one_or_none()
 
-            # Get unread count
             unread_result = await db.execute(
                 select(func.count(Message.id))
                 .where(
@@ -100,11 +96,7 @@ class MessagingService:
             )
             unread_count = unread_result.scalar_one()
 
-            # Get the other member
-            other_member = next(
-                (m for m in conv.members if str(m.user_id) != str(user_id)),
-                None,
-            )
+            other_member = next((m for m in conv.members if str(m.user_id) != str(user_id)), None)
 
             conversations.append({
                 "conversation_id": str(conv.id),
@@ -128,46 +120,39 @@ class MessagingService:
             reverse=True,
         )
 
-    async def get_messages(
-        self,
-        db: AsyncSession,
-        conversation_id: uuid.UUID,
-        user_id: uuid.UUID,
-        before: datetime | None = None,
-        limit: int = 50,
-    ) -> list[Message]:
-        await self.get_conversation(db, conversation_id, user_id)
-
+    async def get_messages(self, db: AsyncSession, conversation_id: uuid.UUID, user_id: uuid.UUID, before: datetime | None = None, limit: int = 50) -> list[Message]:
+        # 🔥 Updated to pre-load reply_to for Flutter
         query = select(Message).where(
-            and_(
-                Message.conversation_id == conversation_id,
-                Message.is_deleted == False,
-            )
-        )
+            and_(Message.conversation_id == conversation_id, Message.is_deleted == False)
+        ).options(selectinload(Message.reply_to))
+        
         if before:
             query = query.where(Message.created_at < before)
 
         query = query.order_by(Message.created_at.desc()).limit(limit)
         result = await db.execute(query)
-        messages = result.scalars().all()
-        return list(reversed(messages))
+        return list(reversed(result.scalars().all()))
 
-    async def save_message(
-        self,
-        db: AsyncSession,
-        conversation_id: uuid.UUID,
-        sender_id: uuid.UUID,
-        content: str,
-    ) -> Message:
+    async def save_message(self, db: AsyncSession, conversation_id: uuid.UUID, sender_id: uuid.UUID, content: str, reply_to_id: uuid.UUID | None = None) -> Message:
         msg = Message(
             conversation_id=conversation_id,
             sender_id=sender_id,
             content=content,
+            reply_to_id=reply_to_id, # 🔥 Now linked to schema
             status=MessageStatus.SENT,
         )
         db.add(msg)
         await db.flush()
-        await db.refresh(msg)
+        await db.refresh(msg, ["reply_to"])
+        return msg
+
+    async def toggle_pin(self, db: AsyncSession, message_id: uuid.UUID, user_id: uuid.UUID) -> Message:
+        result = await db.execute(select(Message).where(Message.id == message_id))
+        msg = result.scalar_one_or_none()
+        if not msg: raise NotFoundError("Message")
+        
+        msg.is_pinned = not msg.is_pinned
+        await db.flush()
         return msg
 
     async def mark_delivered(
@@ -185,7 +170,6 @@ class MessagingService:
         conversation_id: uuid.UUID,
         user_id: uuid.UUID,
     ) -> None:
-        # Update last_read_at for this member
         result = await db.execute(
             select(ConversationMember).where(
                 and_(
@@ -199,7 +183,6 @@ class MessagingService:
             member.last_read_at = datetime.now(timezone.utc)
             await db.flush()
 
-        # Mark all messages in this conversation as read
         msgs_result = await db.execute(
             select(Message).where(
                 and_(

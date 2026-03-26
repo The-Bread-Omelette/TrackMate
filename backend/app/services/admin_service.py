@@ -33,11 +33,16 @@ class AdminService:
         )
         pending_applications = pending_applications.scalar_one()
 
-        # Active sessions = users currently online via Redis
-        from app.core.redis import get_redis
-        redis = await get_redis()
-        online_keys = await redis.keys("presence:*")
-        active_sessions = len(online_keys)
+        # 🔥 FIX: Safely check Redis so a downed Redis server doesn't crash the whole dashboard
+        active_sessions = 0
+        try:
+            from app.core.redis import get_redis
+            redis = await get_redis()
+            if redis:
+                online_keys = await redis.keys("presence:*")
+                active_sessions = len(online_keys)
+        except Exception as e:
+            print(f"Redis skipped for stats: {e}")
 
         # Growth rate — random plausible number for now
         growth_rate = round(random.uniform(2.5, 8.5), 1)
@@ -76,8 +81,12 @@ class AdminService:
         await db.flush()
         return user
 
-    async def get_trainer_applications(self, db: AsyncSession, status: str | None = None) -> list[dict]:
-        query = select(TrainerApplication).options(selectinload(TrainerApplication.user))
+  # Changed return type hint to dict, since you return a dictionary, not a list
+    async def get_trainer_applications(self, db: AsyncSession, status: str | None = None) -> dict:
+        # THE FIX: Chain selectinload to load the profile so it doesn't crash!
+        query = select(TrainerApplication).options(
+            selectinload(TrainerApplication.user).selectinload(User.profile)
+        )
         if status:
             query = query.where(TrainerApplication.status == status)
         query = query.order_by(TrainerApplication.submitted_at.desc())
@@ -87,20 +96,22 @@ class AdminService:
         total = await db.execute(select(func.count(TrainerApplication.id)))
         pending = await db.execute(select(func.count(TrainerApplication.id)).where(TrainerApplication.status == "pending"))
         approved = await db.execute(select(func.count(TrainerApplication.id)).where(TrainerApplication.status == "approved"))
-
+        rejected = await db.execute(select(func.count(TrainerApplication.id)).where(TrainerApplication.status == "rejected"))
         return {
             "summary": {
                 "total": total.scalar_one(),
                 "pending": pending.scalar_one(),
                 "approved": approved.scalar_one(),
+                "rejected": rejected.scalar_one(),
             },
             "applications": [
                 {
                     "id": str(a.id),
                     "user_id": str(a.user_id),
-                    "full_name": a.user.full_name,
-                    "email": a.user.email,
-                    "profile_image_url": a.user.profile.profile_image_url if a.user.profile else None,
+                    "full_name": a.user.full_name if a.user else "Unknown",
+                    "email": a.user.email if a.user else "Unknown",
+                    # Safely check for profile before accessing it
+                    "profile_image_url": a.user.profile.profile_image_url if a.user and a.user.profile else None,
                     "phone_number": a.phone_number,
                     "experience_years": a.experience_years,
                     "about": a.about,

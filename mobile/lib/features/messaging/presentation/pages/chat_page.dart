@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../../../shared/theme/app_theme.dart';
@@ -31,9 +32,13 @@ class _ChatPageState extends State<ChatPage> {
   final List<Map<String, dynamic>> _messages = [];
   final _inputCtrl = TextEditingController();
   final _scroll = ScrollController();
+  
   bool _isOtherTyping = false;
   Timer? _typingTimer;
   bool _connected = false;
+
+  Map<String, dynamic>? _replyingTo;
+  Map<String, dynamic>? _pinnedMessage;
 
   @override
   void initState() {
@@ -51,14 +56,18 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _init() async {
-    // Load history
     try {
       final msgs = await widget.ds.getMessages(widget.conversationId);
-      setState(() => _messages.addAll(msgs.cast<Map<String, dynamic>>()));
+      setState(() {
+        _messages.addAll(msgs.cast<Map<String, dynamic>>());
+        final pinned = _messages.lastWhere((m) => m['is_pinned'] == true, orElse: () => {});
+        if (pinned.isNotEmpty) {
+          _pinnedMessage = pinned;
+        }
+      });
       await widget.ds.markRead(widget.conversationId);
     } catch (_) {}
 
-    // Connect WebSocket via ticket
     try {
       final ticket = await widget.ds.getWsTicket();
       final wsBase = ApiConstants.baseUrl.replaceFirst('http', 'ws');
@@ -78,6 +87,18 @@ class _ChatPageState extends State<ChatPage> {
               setState(() => _messages.add(msg));
               _scrollToBottom();
             }
+          } else if (type == 'message_pinned') {
+            setState(() {
+              final idx = _messages.indexWhere((m) => m['id'] == data['message_id']);
+              if (idx != -1) {
+                _messages[idx]['is_pinned'] = data['is_pinned'];
+              }
+              if (data['is_pinned'] == true) {
+                _pinnedMessage = data;
+              } else if (_pinnedMessage?['message_id'] == data['message_id'] || _pinnedMessage?['id'] == data['message_id']) {
+                _pinnedMessage = null;
+              }
+            });
           } else if (type == 'typing') {
             if (data['user_id'] != widget.currentUserId) {
               setState(() => _isOtherTyping = true);
@@ -87,11 +108,16 @@ class _ChatPageState extends State<ChatPage> {
               });
             }
           } else if (type == 'messages_read') {
-            // Update message statuses
+            setState(() {
+              for (var m in _messages) {
+                if (m['sender_id'] == widget.currentUserId) m['status'] = 'read';
+              }
+            });
           }
         },
-        onDone: () => setState(() => _connected = false),
-        onError: (_) => setState(() => _connected = false),
+// 🔥 ADD "if (mounted)" TO THESE TWO LINES:
+        onDone: () { if (mounted) setState(() => _connected = false); },
+        onError: (_) { if (mounted) setState(() => _connected = false); },
       );
     } catch (_) {}
 
@@ -101,12 +127,23 @@ class _ChatPageState extends State<ChatPage> {
   void _send() {
     final text = _inputCtrl.text.trim();
     if (text.isEmpty || _channel == null) return;
+    
     _channel!.sink.add(jsonEncode({
       'type': 'send_message',
       'conversation_id': widget.conversationId,
       'content': text,
+      'reply_to_id': _replyingTo?['id'],
     }));
+    
+    setState(() => _replyingTo = null);
     _inputCtrl.clear();
+  }
+
+  void _pin(String messageId) {
+    _channel?.sink.add(jsonEncode({
+      'type': 'pin_message',
+      'message_id': messageId,
+    }));
   }
 
   void _sendTyping() {
@@ -149,6 +186,7 @@ class _ChatPageState extends State<ChatPage> {
             const SizedBox(width: 10),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(widget.otherUserName,
                     style: const TextStyle(
@@ -167,6 +205,30 @@ class _ChatPageState extends State<ChatPage> {
       ),
       body: Column(
         children: [
+          if (_pinnedMessage != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: AppColors.primary.withOpacity(0.08),
+              child: Row(
+                children: [
+                  const Icon(Icons.push_pin, size: 16, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _pinnedMessage!['content'],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primary),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 16, color: AppColors.textMuted),
+                    onPressed: () => setState(() => _pinnedMessage = null),
+                  ),
+                ],
+              ),
+            ),
+
           Expanded(
             child: ListView.builder(
               controller: _scroll,
@@ -179,14 +241,49 @@ class _ChatPageState extends State<ChatPage> {
                 final m = _messages[i];
                 final isMe = m['sender_id'] == widget.currentUserId;
                 return _MessageBubble(
-                  content: m['content'] ?? '',
+                  message: m,
                   isMe: isMe,
-                  status: m['status'] as String? ?? 'sent',
-                  time: m['created_at'] as String? ?? '',
+                  onReply: (msg) => setState(() => _replyingTo = msg),
+                  onPin: (id) => _pin(id),
                 );
               },
             ),
           ),
+
+          if (_replyingTo != null)
+            Container(
+              padding: const EdgeInsets.all(12),
+              color: Colors.grey.shade200,
+              child: Row(
+                children: [
+                  const Icon(Icons.reply, size: 20, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min, // 🔥 CRITICAL FIX: Stops the layout crash
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _replyingTo!['sender_id'] == widget.currentUserId ? 'Replying to yourself' : 'Replying to ${widget.otherUserName}',
+                          style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                        Text(
+                          _replyingTo!['content'],
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => setState(() => _replyingTo = null),
+                  ),
+                ],
+              ),
+            ),
+
           Container(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             decoration: BoxDecoration(
@@ -232,83 +329,155 @@ class _ChatPageState extends State<ChatPage> {
 }
 
 class _MessageBubble extends StatelessWidget {
-  final String content;
+  final Map<String, dynamic> message;
   final bool isMe;
-  final String status;
-  final String time;
+  final Function(Map<String, dynamic>) onReply;
+  final Function(String) onPin;
 
   const _MessageBubble({
-    required this.content,
+    required this.message,
     required this.isMe,
-    required this.status,
-    required this.time,
+    required this.onReply,
+    required this.onPin,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Align(
-        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.7),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: isMe ? AppColors.primary : AppColors.surface,
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(18),
-                topRight: const Radius.circular(18),
-                bottomLeft: Radius.circular(isMe ? 18 : 4),
-                bottomRight: Radius.circular(isMe ? 4 : 18),
-              ),
-              border: isMe
-                  ? null
-                  : Border.all(color: AppColors.border),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  content,
-                  style: TextStyle(
-                    color: isMe ? Colors.white : AppColors.textPrimary,
-                    fontSize: 14,
-                  ),
+    final status = message['status'] as String? ?? 'sent';
+    final time = message['created_at'] as String? ?? '';
+    final replyTo = message['reply_to'];
+    final isPinned = message['is_pinned'] == true;
+
+    return GestureDetector(
+      onLongPress: () => _showMenu(context),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Align(
+          alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.75),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: isMe ? AppColors.primary : AppColors.surface,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(18),
+                  topRight: const Radius.circular(18),
+                  bottomLeft: Radius.circular(isMe ? 18 : 4),
+                  bottomRight: Radius.circular(isMe ? 4 : 18),
                 ),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _formatTime(time),
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: isMe
-                            ? Colors.white.withOpacity(0.7)
-                            : AppColors.textMuted,
+                border: isMe ? null : Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min, // 🔥 CRITICAL FIX
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  
+                  if (replyTo != null)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(8),
+                      margin: const EdgeInsets.only(bottom: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                        border: const Border(left: BorderSide(color: Colors.white, width: 3)),
+                      ),
+                      child: Text(
+                        replyTo['content'] ?? '',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isMe ? Colors.white70 : AppColors.textSecondary,
+                        ),
                       ),
                     ),
-                    if (isMe) ...[
-                      const SizedBox(width: 4),
-                      Icon(
-                        status == 'read'
-                            ? Icons.done_all
-                            : status == 'delivered'
-                                ? Icons.done_all
-                                : Icons.done,
-                        size: 12,
-                        color: status == 'read'
-                            ? Colors.lightBlueAccent
-                            : Colors.white.withOpacity(0.7),
+
+                  Text(
+                    message['content'] ?? '',
+                    style: TextStyle(
+                      color: isMe ? Colors.white : AppColors.textPrimary,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isPinned) ...[
+                        Icon(Icons.push_pin, size: 10, color: isMe ? Colors.white70 : AppColors.primary),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(
+                        _formatTime(time),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: isMe ? Colors.white.withOpacity(0.7) : AppColors.textMuted,
+                        ),
                       ),
+                      if (isMe) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          status == 'read'
+                              ? Icons.done_all
+                              : status == 'delivered'
+                                  ? Icons.done_all
+                                  : Icons.done,
+                          size: 12,
+                          color: status == 'read'
+                              ? Colors.lightBlueAccent
+                              : Colors.white.withOpacity(0.7),
+                        ),
+                      ],
                     ],
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  void _showMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(margin: const EdgeInsets.only(top: 8, bottom: 8), width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+            ListTile(
+              leading: const Icon(Icons.reply, color: AppColors.primary),
+              title: const Text('Reply'),
+              onTap: () {
+                Navigator.pop(ctx);
+                onReply(message);
+              },
+            ),
+            ListTile(
+              leading: Icon(message['is_pinned'] == true ? Icons.push_pin_outlined : Icons.push_pin, color: AppColors.primary),
+              title: Text(message['is_pinned'] == true ? 'Unpin Message' : 'Pin Message'),
+              onTap: () {
+                Navigator.pop(ctx);
+                onPin(message['id']);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy, color: AppColors.primary),
+              title: const Text('Copy Text'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Clipboard.setData(ClipboardData(text: message['content']));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied to clipboard')));
+              },
+            ),
+          ],
         ),
       ),
     );

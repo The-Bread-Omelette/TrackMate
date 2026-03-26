@@ -1,3 +1,5 @@
+import csv
+import os
 import uuid
 from datetime import datetime, date, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,21 +15,37 @@ from app.core.exceptions import NotFoundError, ForbiddenError
 
 
 class FitnessService:
+    def __init__(self):
+        self.local_exercise_db = []
+        self._load_exercises_csv()
+
+    def _load_exercises_csv(self):
+        csv_path = os.path.join(os.path.dirname(__file__), "exercises.csv")
+        if not os.path.exists(csv_path):
+            return
+        try:
+            with open(csv_path, mode="r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    self.local_exercise_db.append({
+                        "id": str(uuid.uuid4()),
+                        "name": row.get("Exercise Name", "").strip(),
+                        "category": row.get("Exercise Type", "strength").lower(),
+                        "measurement_type": "reps",
+                        "description": row.get("Description", ""),
+                        "is_custom": False,
+                    })
+        except Exception:
+            pass
 
     # ── Exercises ─────────────────────────────────────────────────────────────
 
-    async def search_exercises(
-        self, db: AsyncSession, q: str, user_id: uuid.UUID
-    ) -> list[Exercise]:
-        result = await db.execute(
-            select(Exercise).where(
-                and_(
-                    Exercise.name.ilike(f"%{q}%"),
-                    (Exercise.is_custom == False) | (Exercise.created_by == user_id)
-                )
-            ).limit(20)
-        )
-        return result.scalars().all()
+    async def search_exercises(self, db: AsyncSession, q: str, user_id: uuid.UUID) -> list[dict]:
+        # Overridden to use the CSV data so the Flutter app gets the new items
+        q = q.lower().strip()
+        if not q:
+            return self.local_exercise_db[:20]
+        return [ex for ex in self.local_exercise_db if q in ex["name"].lower()][:20]
 
     async def create_exercise(
         self, db: AsyncSession, user_id: uuid.UUID,
@@ -137,73 +155,45 @@ class FitnessService:
 
     # ── Food & Nutrition ──────────────────────────────────────────────────────
 
-
     async def log_meal(
-        self,
-        db: AsyncSession,
-        user_id: uuid.UUID,
-        food_id: str,
-        food_name: str,
-        calories_per_100g: float,
-        protein_per_100g: float,
-        carbs_per_100g: float,
-        fat_per_100g: float,
-        serving_size_g: float,
-        serving_label: str,
-        servings: float,
-        logged_at: datetime | None,
+        self, db: AsyncSession, user_id: uuid.UUID, food_id: str, food_name: str,
+        calories_per_100g: float, protein_per_100g: float, carbs_per_100g: float,
+        fat_per_100g: float, serving_size_g: float, serving_label: str,
+        servings: float, logged_at: datetime | None,
     ) -> MealLog:
         log = MealLog(
-            user_id=user_id,
-            food_id=food_id,
-            food_name=food_name,
-            calories_per_100g=calories_per_100g,
-            protein_per_100g=protein_per_100g,
-            carbs_per_100g=carbs_per_100g,
-            fat_per_100g=fat_per_100g,
-            serving_size_g=serving_size_g,
-            serving_label=serving_label,
-            servings=servings,
-            logged_at=logged_at or datetime.now(timezone.utc),
+            user_id=user_id, food_id=food_id, food_name=food_name,
+            calories_per_100g=calories_per_100g, protein_per_100g=protein_per_100g,
+            carbs_per_100g=carbs_per_100g, fat_per_100g=fat_per_100g,
+            serving_size_g=serving_size_g, serving_label=serving_label,
+            servings=servings, logged_at=logged_at or datetime.now(timezone.utc),
         )
         db.add(log)
         await db.flush()
         await db.refresh(log)
         return log
     
-    async def get_meals_for_date(
-        self, db: AsyncSession, user_id: uuid.UUID, target_date: date
-    ) -> list[MealLog]:
+    async def get_meals_for_date(self, db: AsyncSession, user_id: uuid.UUID, target_date: date) -> list[MealLog]:
         start = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
         end = start + timedelta(days=1)
         result = await db.execute(
             select(MealLog).where(
-                MealLog.user_id == user_id,
-                MealLog.logged_at >= start,
-                MealLog.logged_at < end,
+                MealLog.user_id == user_id, MealLog.logged_at >= start, MealLog.logged_at < end,
             ).order_by(MealLog.logged_at)
         )
         return result.scalars().all()
 
-    async def delete_meal(
-        self, db: AsyncSession, meal_id: uuid.UUID, user_id: uuid.UUID
-    ) -> None:
+    async def delete_meal(self, db: AsyncSession, meal_id: uuid.UUID, user_id: uuid.UUID) -> None:
         result = await db.execute(select(MealLog).where(MealLog.id == meal_id))
         log = result.scalar_one_or_none()
-        if not log:
-            raise NotFoundError("Meal log")
-        if str(log.user_id) != str(user_id):
-            raise ForbiddenError("Not your meal")
+        if not log: raise NotFoundError("Meal log")
+        if str(log.user_id) != str(user_id): raise ForbiddenError("Not your meal")
         await db.delete(log)
         await db.flush()
 
-    async def get_nutrition_summary(
-        self, db: AsyncSession, user_id: uuid.UUID, target_date: date
-    ) -> dict:
+    async def get_nutrition_summary(self, db: AsyncSession, user_id: uuid.UUID, target_date: date) -> dict:
         meals = await self.get_meals_for_date(db, user_id, target_date)
-        def _calc(m, field):
-            return getattr(m, field) * m.servings * m.serving_size_g / 100
-
+        def _calc(m, field): return getattr(m, field) * m.servings * m.serving_size_g / 100
         return {
             "date": target_date.isoformat(),
             "total_calories": round(sum(_calc(m, "calories_per_100g") for m in meals), 1),
@@ -215,16 +205,8 @@ class FitnessService:
 
     # ── Steps ─────────────────────────────────────────────────────────────────
 
-    async def log_steps(
-        self, db: AsyncSession, user_id: uuid.UUID, steps: int, logged_date: date
-    ) -> StepLog:
-        # Upsert — update if exists for this date
-        result = await db.execute(
-            select(StepLog).where(
-                StepLog.user_id == user_id,
-                StepLog.logged_date == logged_date,
-            )
-        )
+    async def log_steps(self, db: AsyncSession, user_id: uuid.UUID, steps: int, logged_date: date) -> StepLog:
+        result = await db.execute(select(StepLog).where(StepLog.user_id == user_id, StepLog.logged_date == logged_date))
         existing = result.scalar_one_or_none()
         if existing:
             existing.steps = steps
@@ -236,16 +218,9 @@ class FitnessService:
         await db.refresh(log)
         return log
 
-    async def get_steps_summary(
-        self, db: AsyncSession, user_id: uuid.UUID, user_goal: int
-    ) -> dict:
+    async def get_steps_summary(self, db: AsyncSession, user_id: uuid.UUID, user_goal: int) -> dict:
         today = date.today()
-        result = await db.execute(
-            select(StepLog).where(
-                StepLog.user_id == user_id,
-                StepLog.logged_date == today,
-            )
-        )
+        result = await db.execute(select(StepLog).where(StepLog.user_id == user_id, StepLog.logged_date == today))
         log = result.scalar_one_or_none()
         steps_today = log.steps if log else 0
         return {
@@ -256,26 +231,14 @@ class FitnessService:
             "remaining": max(0, user_goal - steps_today),
         }
 
-    async def get_steps_history(
-        self, db: AsyncSession, user_id: uuid.UUID, days: int = 7
-    ) -> list[dict]:
+    async def get_steps_history(self, db: AsyncSession, user_id: uuid.UUID, days: int = 7) -> list[dict]:
         since = date.today() - timedelta(days=days)
-        result = await db.execute(
-            select(StepLog).where(
-                StepLog.user_id == user_id,
-                StepLog.logged_date >= since,
-            ).order_by(StepLog.logged_date)
-        )
+        result = await db.execute(select(StepLog).where(StepLog.user_id == user_id, StepLog.logged_date >= since).order_by(StepLog.logged_date))
         logs = result.scalars().all()
         return [{"date": l.logged_date.isoformat(), "steps": l.steps} for l in logs]
 
     async def get_streak(self, db: AsyncSession, user_id: uuid.UUID, goal: int) -> int:
-        result = await db.execute(
-            select(StepLog).where(
-                StepLog.user_id == user_id,
-                StepLog.steps >= goal,
-            ).order_by(desc(StepLog.logged_date))
-        )
+        result = await db.execute(select(StepLog).where(StepLog.user_id == user_id, StepLog.steps >= goal).order_by(desc(StepLog.logged_date)))
         logs = result.scalars().all()
         streak = 0
         check_date = date.today()
@@ -283,31 +246,21 @@ class FitnessService:
             if log.logged_date == check_date:
                 streak += 1
                 check_date -= timedelta(days=1)
-            else:
-                break
+            else: break
         return streak
 
     # ── Hydration ─────────────────────────────────────────────────────────────
 
-    async def log_hydration(
-        self, db: AsyncSession, user_id: uuid.UUID, amount_ml: int
-    ) -> HydrationLog:
+    async def log_hydration(self, db: AsyncSession, user_id: uuid.UUID, amount_ml: int) -> HydrationLog:
         log = HydrationLog(user_id=user_id, amount_ml=amount_ml)
         db.add(log)
         await db.flush()
         await db.refresh(log)
         return log
 
-    async def get_hydration_summary(
-        self, db: AsyncSession, user_id: uuid.UUID
-    ) -> dict:
+    async def get_hydration_summary(self, db: AsyncSession, user_id: uuid.UUID) -> dict:
         today_start = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=timezone.utc)
-        result = await db.execute(
-            select(func.sum(HydrationLog.amount_ml)).where(
-                HydrationLog.user_id == user_id,
-                HydrationLog.logged_at >= today_start,
-            )
-        )
+        result = await db.execute(select(func.sum(HydrationLog.amount_ml)).where(HydrationLog.user_id == user_id, HydrationLog.logged_at >= today_start))
         total_ml = result.scalar_one() or 0
         return {
             "date": date.today().isoformat(),
@@ -319,65 +272,31 @@ class FitnessService:
 
     # ── Weight ────────────────────────────────────────────────────────────────
 
-    async def log_weight(
-        self, db: AsyncSession, user_id: uuid.UUID, weight_kg: float
-    ) -> WeightLog:
+    async def log_weight(self, db: AsyncSession, user_id: uuid.UUID, weight_kg: float) -> WeightLog:
         log = WeightLog(user_id=user_id, weight_kg=weight_kg)
         db.add(log)
         await db.flush()
         await db.refresh(log)
         return log
 
-    async def get_weight_trend(
-        self, db: AsyncSession, user_id: uuid.UUID, days: int = 30
-    ) -> list[dict]:
+    async def get_weight_trend(self, db: AsyncSession, user_id: uuid.UUID, days: int = 30) -> list[dict]:
         since = datetime.now(timezone.utc) - timedelta(days=days)
-        result = await db.execute(
-            select(WeightLog).where(
-                WeightLog.user_id == user_id,
-                WeightLog.logged_at >= since,
-            ).order_by(WeightLog.logged_at)
-        )
+        result = await db.execute(select(WeightLog).where(WeightLog.user_id == user_id, WeightLog.logged_at >= since).order_by(WeightLog.logged_at))
         logs = result.scalars().all()
-        return [
-            {"date": l.logged_at.date().isoformat(), "weight_kg": l.weight_kg}
-            for l in logs
-        ]
+        return [{"date": l.logged_at.date().isoformat(), "weight_kg": l.weight_kg} for l in logs]
 
     # ── Stats ─────────────────────────────────────────────────────────────────
 
-    async def get_weekly_stats(
-        self, db: AsyncSession, user_id: uuid.UUID, user_goal: int
-    ) -> dict:
+    async def get_weekly_stats(self, db: AsyncSession, user_id: uuid.UUID, user_goal: int) -> dict:
         since = datetime.now(timezone.utc) - timedelta(days=7)
         since_date = date.today() - timedelta(days=7)
 
-        workouts = await db.execute(
-            select(func.count(WorkoutSession.id)).where(
-                WorkoutSession.user_id == user_id,
-                WorkoutSession.status == WorkoutStatus.COMPLETED,
-                WorkoutSession.started_at >= since,
-            )
-        )
-
-        calories_burned = await db.execute(
-            select(func.sum(WorkoutSession.calories_burned)).where(
-                WorkoutSession.user_id == user_id,
-                WorkoutSession.status == WorkoutStatus.COMPLETED,
-                WorkoutSession.started_at >= since,
-            )
-        )
-
-        step_logs = await db.execute(
-            select(StepLog).where(
-                StepLog.user_id == user_id,
-                StepLog.logged_date >= since_date,
-            )
-        )
+        workouts = await db.execute(select(func.count(WorkoutSession.id)).where(WorkoutSession.user_id == user_id, WorkoutSession.status == WorkoutStatus.COMPLETED, WorkoutSession.started_at >= since))
+        calories_burned = await db.execute(select(func.sum(WorkoutSession.calories_burned)).where(WorkoutSession.user_id == user_id, WorkoutSession.status == WorkoutStatus.COMPLETED, WorkoutSession.started_at >= since))
+        step_logs = await db.execute(select(StepLog).where(StepLog.user_id == user_id, StepLog.logged_date >= since_date))
         step_data = step_logs.scalars().all()
         total_steps = sum(s.steps for s in step_data)
         goal_days_met = sum(1 for s in step_data if s.steps >= user_goal)
-
         streak = await self.get_streak(db, user_id, user_goal)
 
         return {
@@ -387,6 +306,5 @@ class FitnessService:
             "step_goal_days_met": goal_days_met,
             "streak_days": streak,
         }
-
 
 fitness_service = FitnessService()

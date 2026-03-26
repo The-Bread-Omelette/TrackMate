@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter_bloc/flutter_bloc.dart'; // FIX: Added missing bloc import
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../features/auth/presentation/bloc/auth_bloc.dart';
 import '../../features/auth/presentation/bloc/auth_state.dart';
-import '../../features/auth/presentation/bloc/auth_event.dart'; // FIX: Added to resolve AuthCompleteOnboardingEvent
+import '../../features/auth/presentation/bloc/auth_event.dart';
 import '../../features/auth/presentation/pages/login_page.dart';
 import '../../features/auth/presentation/pages/register_page.dart';
 import '../../features/auth/presentation/pages/check_email_page.dart';
@@ -20,6 +20,7 @@ import '../../features/trainer/presentation/pages/find_trainer_page.dart';
 import '../../features/admin/presentation/pages/admin_dashboard_page.dart';
 import '../../features/admin/presentation/pages/admin_trainers_page.dart';
 import '../../features/admin/presentation/pages/admin_reports_page.dart';
+import '../../features/admin/presentation/pages/admin_users_page.dart';
 import '../../features/social/presentation/pages/social_page.dart';
 import '../../features/notifications/presentation/pages/notifications_page.dart';
 import '../../features/messaging/presentation/pages/conversations_page.dart';
@@ -42,12 +43,13 @@ class AppRouter {
   static const String findTrainer = '/find-trainer';
   static const String adminTrainers = '/admin/trainers';
   static const String adminReports = '/admin/reports';
+  static const String adminUsers = '/admin/users';
   static const String notifications = '/notifications';
   static const String social = '/social';
   static const String messages = '/messages';
   static const String calendar = '/calendar';
   static const String onboarding = '/onboarding';
-  static const String trainerCalendar = '/trainer/calendar'; // FIX: Added missing route string
+  static const String trainerCalendar = '/trainer/calendar'; 
 
   static GoRouter create(AuthBloc authBloc) {
     return GoRouter(
@@ -60,41 +62,29 @@ class AppRouter {
         final isAuthRoute = loc == login || loc == register;
         final isCheckEmailRoute = loc == checkEmail;
 
-        if (authState is AuthLoadingState || authState is AuthInitialState) {
-          return null;
-        }
+        if (authState is AuthLoadingState || authState is AuthInitialState) return null;
+        if (authState is AuthUnauthenticatedState) return isAuthRoute ? null : login;
+        
         if (authState is AuthRegisteredState) {
-          return isCheckEmailRoute
-              ? null
-              : '$checkEmail?email=${Uri.encodeComponent(authState.email)}';
+          return isCheckEmailRoute ? null : '$checkEmail?email=${Uri.encodeComponent(authState.email)}';
         }
         if (authState is AuthUnverifiedState) {
-          return isCheckEmailRoute
-              ? null
-              : '$checkEmail?email=${Uri.encodeComponent(authState.email)}';
+          return isCheckEmailRoute ? null : '$checkEmail?email=${Uri.encodeComponent(authState.email)}';
         }
+        
+        if (authState is AuthOnboardingState) return loc == onboarding ? null : onboarding;
+
         if (authState is AuthAuthenticatedState) {
-          if (isAuthRoute || isCheckEmailRoute || loc == splash) {
+          if (isAuthRoute || isCheckEmailRoute || loc == splash || loc == onboarding) {
             return _homeForRole(authState.user.role);
           }
           return null;
         }
-        if (authState is AuthUnauthenticatedState ||
-            authState is AuthErrorState) {
-          return isAuthRoute ? null : login;
-        }
-
-        if (authState is AuthOnboardingState) {
-          return loc == onboarding ? null : onboarding;
-        }
+        
         return null;
-
       },
       routes: [
-        GoRoute(
-          path: splash,
-          builder: (_, __) => const _SplashPage(),
-        ),
+        GoRoute(path: splash, builder: (_, __) => const _SplashPage()),
         GoRoute(
           path: login,
           builder: (context, state) => LoginPage(
@@ -102,97 +92,62 @@ class AppRouter {
             verified: state.uri.queryParameters['verified'] == 'true',
           ),
         ),
-        GoRoute(
-          path: register,
-          builder: (context, _) => RegisterPage(
-            onNavigateToLogin: () => context.go(login),
-          ),
-        ),
+        GoRoute(path: register, builder: (context, _) => RegisterPage(onNavigateToLogin: () => context.go(login))),
         GoRoute(
           path: checkEmail,
-          builder: (context, state) => CheckEmailPage(
-            email: state.uri.queryParameters['email'] ?? '',
+          builder: (context, state) => CheckEmailPage(email: state.uri.queryParameters['email'] ?? ''),
+        ),
+        GoRoute(
+          path: onboarding,
+          builder: (context, _) => OnboardingPage(
+            onComplete: () => context.read<AuthBloc>().add(const AuthCompleteOnboardingEvent()),
           ),
         ),
-        GoRoute(
-          path: dashboard,
-          builder: (_, __) => const DashboardPage(),
-        ),
-        GoRoute(
-          path: settings,
-          builder: (_, __) => const SettingsPage(),
-        ),
-        GoRoute(
-          path: trainerStudents,
-          builder: (_, __) => const DashboardPage(),
-        ),
-        GoRoute(
-          path: adminDashboard,
-          builder: (_, __) => const DashboardPage(),
-        ),
+        
+        // Core User Routes
+        GoRoute(path: dashboard, builder: (_, __) => const DashboardPage()),
+        GoRoute(path: settings, builder: (_, __) => const SettingsPage()),
         GoRoute(path: food, builder: (_, __) => const FoodLoggingPage()),
         GoRoute(path: exercise, builder: (_, __) => const ExercisePage()),
         GoRoute(path: analytics, builder: (_, __) => const AnalyticsPage()),
-        GoRoute(path: trainerRequests, builder: (_, __) => const TrainerRequestsPage()),
-        GoRoute(path: findTrainer, builder: (_, __) => const FindTrainerPage()),
-        GoRoute(path: adminTrainers, builder: (_, __) => const AdminTrainersPage()),
-        GoRoute(path: adminReports, builder: (_, __) => const AdminReportsPage()),
         GoRoute(path: social, builder: (_, __) => const SocialPage()),
         GoRoute(path: notifications, builder: (_, __) => const NotificationsPage()),
         GoRoute(path: messages, builder: (_, __) => const ConversationsPage()),
         GoRoute(path: calendar, builder: (_, __) => const CalendarPage()),
-        GoRoute(path: trainerCalendar, builder: (_, __) => const TrainerRequestsPage()),
-        GoRoute(
-            path: onboarding,
-            builder: (context, _) => OnboardingPage(
-              // FIX: Make sure AuthCompleteOnboardingEvent exists in auth_event.dart
-              onComplete: () => context.read<AuthBloc>().add(const AuthCompleteOnboardingEvent()),
-            ),
-          ),
+        
+        // 🔥 Trainer Routes (FIXED: Now pointing to their actual pages)
+        GoRoute(path: trainerStudents, builder: (_, __) => const TrainerStudentsPage()), 
+        GoRoute(path: trainerRequests, builder: (_, __) => const TrainerRequestsPage()),
+        GoRoute(path: trainerCalendar, builder: (_, __) => const CalendarPage()), 
+        GoRoute(path: findTrainer, builder: (_, __) => const FindTrainerPage()),
+
+        // Admin Routes
+        GoRoute(path: adminDashboard, builder: (_, __) => const AdminDashboardPage()),
+        GoRoute(path: adminTrainers, builder: (_, __) => const AdminTrainersPage()),
+        GoRoute(path: adminReports, builder: (_, __) => const AdminReportsPage()),
+        GoRoute(path: adminUsers, builder: (_, __) => const AdminUsersPage()), 
       ],
     );
   }
 
   static String _homeForRole(UserRole role) {
     switch (role) {
-      case UserRole.admin:
-        return adminDashboard;
-      case UserRole.trainer:
-        return trainerStudents;
-      case UserRole.trainee:
-        return dashboard;
+      case UserRole.admin: return adminDashboard;
+      case UserRole.trainer: return trainerStudents; // This will now properly route to TrainerStudentsPage
+      case UserRole.trainee: return dashboard;
     }
   }
 }
 
 class _BlocListenable extends ChangeNotifier {
   late final StreamSubscription<AuthState> _sub;
-
-  _BlocListenable(AuthBloc bloc) {
-    _sub = bloc.stream.listen((_) => notifyListeners());
-  }
-
-  @override
-  void dispose() {
-    _sub.cancel();
-    super.dispose();
-  }
+  _BlocListenable(AuthBloc bloc) { _sub = bloc.stream.listen((_) => notifyListeners()); }
+  @override void dispose() { _sub.cancel(); super.dispose(); }
 }
 
 class _SplashPage extends StatelessWidget {
   const _SplashPage();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Color(0xFF2563EB),
-      body: Center(
-        child: Icon(
-          Icons.track_changes_rounded,
-          color: Colors.white,
-          size: 56,
-        ),
-      ),
-    );
+  @override Widget build(BuildContext context) {
+    return const Scaffold(backgroundColor: Color(0xFF2563EB), body: Center(child: Icon(Icons.track_changes_rounded, color: Colors.white, size: 56)));
   }
 }

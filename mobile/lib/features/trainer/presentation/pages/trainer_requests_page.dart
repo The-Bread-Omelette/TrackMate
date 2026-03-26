@@ -50,8 +50,12 @@ class _TrainerRequestsPageState extends State<TrainerRequestsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final user =
-        (context.read<AuthBloc>().state as AuthAuthenticatedState).user;
+    final authState = context.read<AuthBloc>().state;
+    final user = authState is AuthAuthenticatedState ? authState.user : null;
+
+    if (user == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     return MainLayout(
       user: user,

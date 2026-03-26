@@ -13,81 +13,12 @@ class FoodLoggingPage extends StatefulWidget {
   @override
   State<FoodLoggingPage> createState() => _FoodLoggingPageState();
 }
-class _WaterSection extends StatelessWidget {
-  final Map<String, dynamic> hydration;
-  final ValueChanged<int> onLog;
 
-  const _WaterSection({required this.hydration, required this.onLog});
-
-  @override
-  Widget build(BuildContext context) {
-    final totalMl = (hydration['total_ml'] ?? 0) as num;
-    final goalMl = (hydration['goal_ml'] ?? 2500) as num;
-    final pct = (hydration['percentage'] ?? 0.0) as num;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(children: [
-                const Icon(Icons.water_drop, color: Colors.blue, size: 18),
-                const SizedBox(width: 6),
-                const Text('Water Intake',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-              ]),
-              Text('${totalMl.toStringAsFixed(0)} / ${goalMl.toInt()} ml',
-                  style: const TextStyle(color: AppColors.textSecondary,
-                      fontSize: 13)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: (pct / 100).clamp(0.0, 1.0),
-              backgroundColor: AppColors.border,
-              valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
-              minHeight: 8,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [250, 350, 500].map((ml) => Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: OutlinedButton(
-                onPressed: () => onLog(ml),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  side: const BorderSide(color: Colors.blue),
-                  foregroundColor: Colors.blue,
-                ),
-                child: Text('+${ml}ml',
-                    style: const TextStyle(fontSize: 12)),
-              ),
-            )).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-}
 class _FoodLoggingPageState extends State<FoodLoggingPage> {
   final _ds = NutritionRemoteDataSource(sl());
   final _searchCtrl = TextEditingController();
 
-Map<String, dynamic> _hydration = {};
+  Map<String, dynamic> _hydration = {};
   List<dynamic> _searchResults = [];
   List<dynamic> _loggedMeals = [];
   Map<String, dynamic> _summary = {};
@@ -210,7 +141,7 @@ Map<String, dynamic> _hydration = {};
                       searching: _searching,
                     ),
                     const SizedBox(height: 12),
-                    if (_searchResults.isNotEmpty)
+                    if (_searchResults.isNotEmpty && _selectedFood == null)
                       _SearchResults(
                         results: _searchResults,
                         onSelect: (food) => setState(() {
@@ -237,6 +168,81 @@ Map<String, dynamic> _hydration = {};
                 ),
               ),
             ),
+    );
+  }
+}
+
+// ── Components ──────────────────────────────────────────────────────────────
+
+class _WaterSection extends StatelessWidget {
+  final Map<String, dynamic> hydration;
+  final ValueChanged<int> onLog;
+
+  const _WaterSection({required this.hydration, required this.onLog});
+
+  @override
+  Widget build(BuildContext context) {
+    final totalMl = (hydration['total_ml'] ?? 0) as num;
+    final goalMl = (hydration['goal_ml'] ?? 2500) as num;
+    final pct = (hydration['percentage'] ?? 0.0) as num;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(children: [
+                const Icon(Icons.water_drop, color: Colors.blue, size: 18),
+                const SizedBox(width: 6),
+                const Text('Water Intake',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ]),
+              Text('${totalMl.toStringAsFixed(0)} / ${goalMl.toInt()} ml',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 13)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: (pct / 100).clamp(0.0, 1.0),
+              backgroundColor: AppColors.border,
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+              minHeight: 8,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [250, 350, 500]
+                .map((ml) => Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: OutlinedButton(
+                        onPressed: () => onLog(ml),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          side: const BorderSide(color: Colors.blue),
+                          foregroundColor: Colors.blue,
+                        ),
+                        child: Text('+${ml}ml',
+                            style: const TextStyle(fontSize: 12)),
+                      ),
+                    ))
+                .toList(),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -273,17 +279,17 @@ class _MacrosCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          _MacroBar('Protein', protein.toDouble(), 150, AppColors.primary),
+          _macroBar('Protein', protein.toDouble(), 150, AppColors.primary),
           const SizedBox(height: 12),
-          _MacroBar('Carbs', carbs.toDouble(), 200, AppColors.success),
+          _macroBar('Carbs', carbs.toDouble(), 200, AppColors.success),
           const SizedBox(height: 12),
-          _MacroBar('Fats', fat.toDouble(), 65, Colors.orange),
+          _macroBar('Fats', fat.toDouble(), 65, Colors.orange),
         ],
       ),
     );
   }
 
-  Widget _MacroBar(String label, double current, double goal, Color color) {
+  Widget _macroBar(String label, double current, double goal, Color color) {
     final progress = (current / goal).clamp(0.0, 1.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -293,7 +299,8 @@ class _MacrosCard extends StatelessWidget {
           children: [
             Text(label, style: const TextStyle(fontSize: 12)),
             Text('${current.toStringAsFixed(1)}g / ${goal.toInt()}g',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
           ],
         ),
         const SizedBox(height: 6),
@@ -365,17 +372,39 @@ class _SearchResults extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text('Search Results',
-                style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textSecondary)),
           ),
           ...results.take(8).map((f) {
             final food = f as Map<String, dynamic>;
+            final String name = food['name'] ?? '';
+            final String imgName = name.toLowerCase().replaceAll(' ', '_');
+
             return ListTile(
-              title: Text(food['name'] ?? ''),
+              leading: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(
+                  'assets/images/$imgName.jpg',
+                  width: 44,
+                  height: 44,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    width: 44,
+                    height: 44,
+                    color: AppColors.background,
+                    child: const Icon(Icons.restaurant,
+                        size: 20, color: AppColors.textMuted),
+                  ),
+                ),
+              ),
+              title: Text(name),
               subtitle: Text(
                 '${(food['calories_per_100g'] ?? 0).toStringAsFixed(0)} kcal · ${food['serving_label'] ?? '100g'}',
                 style: const TextStyle(fontSize: 12),
               ),
-              trailing: const Icon(Icons.add_circle_outline, color: AppColors.primary),
+              trailing: const Icon(Icons.add_circle_outline,
+                  color: AppColors.primary),
               onTap: () => onSelect(food),
             );
           }),
@@ -402,6 +431,9 @@ class _AddFoodCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String name = food['name'] ?? '';
+    final String imgName = name.toLowerCase().replaceAll(' ', '_');
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -412,13 +444,36 @@ class _AddFoodCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Add to Log',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 8),
-          Text(food['name'] ?? '',
-              style: const TextStyle(fontWeight: FontWeight.bold)),
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(
+                  'assets/images/$imgName.jpg',
+                  width: 50,
+                  height: 50,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Add to Log',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.primary)),
+                    Text(name,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           Text(
-            '${(food['calories_per_100g'] ?? 0).toStringAsFixed(0)} kcal · P: ${(food['protein_per_100g'] ?? 0).toStringAsFixed(1)}g · C: ${(food['carbs_per_100g'] ?? 0).toStringAsFixed(1)}g · F: ${(food['fat_per_100g'] ?? 0).toStringAsFixed(1)}g',
+            'Per 100g: ${(food['calories_per_100g'] ?? 0).toStringAsFixed(0)} kcal · P: ${(food['protein_per_100g'] ?? 0).toStringAsFixed(1)}g · C: ${(food['carbs_per_100g'] ?? 0).toStringAsFixed(1)}g',
             style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 16),
@@ -495,35 +550,55 @@ class _LoggedFoodsCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('Foods Eaten Today',
-              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
+              style: TextStyle(
+                  fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
           const SizedBox(height: 12),
           if (meals.isEmpty)
             const Center(
               child: Padding(
                 padding: EdgeInsets.all(16),
-                child: Text('No food logged yet', style: TextStyle(color: AppColors.textMuted)),
+                child: Text('No food logged yet',
+                    style: TextStyle(color: AppColors.textMuted)),
               ),
             )
           else
             ...meals.map((m) {
               final meal = m as Map<String, dynamic>;
+              final String name = meal['food_name'] ?? '';
+              final String imgName = name.toLowerCase().replaceAll(' ', '_');
+
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: AppColors.background,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: AppColors.border),
                   ),
                   child: Row(
                     children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.asset(
+                          'assets/images/$imgName.jpg',
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(
+                              Icons.restaurant,
+                              size: 20,
+                              color: AppColors.textMuted),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(meal['food_name'] ?? '',
-                                style: const TextStyle(fontWeight: FontWeight.bold)),
+                            Text(name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold)),
                             Text(
                               '${(meal['calories'] ?? 0).toStringAsFixed(0)} kcal · ${meal['servings']}x ${meal['serving_label']}',
                               style: const TextStyle(

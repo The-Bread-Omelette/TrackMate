@@ -104,6 +104,33 @@ async def get_my_trainer(
         }
     }
 
+@router.get("/my-notes", status_code=status.HTTP_200_OK)
+async def get_my_notes(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import select
+    from app.models.trainer import TrainerNote
+    result = await db.execute(
+        select(TrainerNote)
+        .where(TrainerNote.trainee_id == current_user.id)
+        .order_by(TrainerNote.created_at.desc())
+    )
+    notes = result.scalars().all()
+    return [
+        {"id": str(n.id), "content": n.content, "created_at": n.created_at.isoformat()} 
+        for n in notes
+    ]
+    
+@router.post("/quit", status_code=status.HTTP_200_OK)
+async def quit_current_trainer(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # 🔥 NEW: Trainee firing their trainer
+    await trainer_service.quit_trainer(db, current_user)
+    return {"message": "Successfully removed trainer."}
+
 
 # ── Trainer: Manage Students ──────────────────────────────────────────────────
 
@@ -211,7 +238,6 @@ async def get_student_workouts(
     trainer: User = Depends(require_trainer),
     db: AsyncSession = Depends(get_db),
 ):
-    # Verify this trainee belongs to this trainer
     from sqlalchemy import select
     from app.models.user import User as UserModel
     result = await db.execute(

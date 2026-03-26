@@ -7,6 +7,7 @@ import '../../../../features/auth/presentation/bloc/auth_state.dart';
 import '../../../../shared/widgets/main_layout.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../data/workout_remote_datasource.dart';
+import 'cardio_timer_page.dart'; // REQUIRED IMPORT
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:dio/dio.dart';
 
@@ -129,8 +130,11 @@ class _ExercisePageState extends State<ExercisePage> {
                         child: _ExerciseTypeCard(
                           emoji: '🏃',
                           title: 'Cardio',
-                          subtitle: 'Log cardio session',
-                          onTap: () => _startQuickSession('Cardio'),
+                          subtitle: 'Timer & Tracking',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const CardioTimerPage()),
+                          ).then((_) => _load()),
                         ),
                       ),
                     ],
@@ -222,7 +226,6 @@ class _StepCounterCard extends StatelessWidget {
             ),
           ),
           ElevatedButton(
-            // FORCE FINITE WIDTH TO BLOCK GLOBAL THEME CRASH
             style: ElevatedButton.styleFrom(minimumSize: const Size(0, 48)),
             onPressed: onLog, 
             child: const Text('Log')
@@ -280,9 +283,28 @@ class _SessionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String name = session['name'] ?? 'Workout';
+    final String imgName = name.toLowerCase().replaceAll(' ', '_');
+    final bool isGym = name.contains('Gym') || name.contains('Workout');
+    
+    // Calculates Cardio Duration
+    String durationText = '';
+    if (session['started_at'] != null && session['ended_at'] != null) {
+      try {
+        final start = DateTime.parse(session['started_at']);
+        final end = DateTime.parse(session['ended_at']);
+        final diff = end.difference(start);
+        if (diff.inMinutes > 0) {
+          durationText = '${diff.inMinutes} min';
+        } else if (diff.inSeconds > 0) {
+          durationText = '${diff.inSeconds} sec';
+        }
+      } catch (_) {}
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
@@ -290,14 +312,28 @@ class _SessionCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.fitness_center, color: AppColors.primary),
+          // Render Local Asset Image
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.asset(
+              'assets/images/${isGym ? 'barbell_squat' : imgName}.jpg',
+              width: 50, height: 50, fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                width: 50, height: 50, color: AppColors.background,
+                child: Icon(isGym ? Icons.fitness_center : Icons.directions_run, color: AppColors.primary),
+              ),
+            ),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(session['name'] ?? 'Workout', style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text('${sets.length} sets', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(
+                  durationText.isNotEmpty ? durationText : '${sets.length} sets', 
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)
+                ),
               ],
             ),
           ),
@@ -334,7 +370,6 @@ class _WeightLogCard extends StatelessWidget {
           ),
           const SizedBox(width: 16),
           ElevatedButton(
-            // FORCE FINITE WIDTH TO BLOCK GLOBAL THEME CRASH
             style: ElevatedButton.styleFrom(minimumSize: const Size(0, 48)),
             onPressed: onLog, 
             child: const Text('Log')
@@ -400,21 +435,23 @@ class _GymSessionPageState extends State<GymSessionPage> {
     final weight = double.tryParse(_weightCtrl.text);
     if (reps == null) return;
 
+    // OPTIMISTIC UI UPDATE: Update instantly before backend call to prevent freeze
+    setState(() {
+      _sets.add({
+        'exercise': _selectedExercise!['name'],
+        'reps': reps,
+        'weight': weight,
+      });
+      _repsCtrl.clear();
+      _weightCtrl.clear();
+    });
+
     try {
       await widget.ds.logSet(_sessionId!, {
         'exercise_id': _selectedExercise!['id'],
-        'set_number': _sets.length + 1,
+        'set_number': _sets.length, // Already added locally, so length is the new set number
         'reps': reps,
         'weight_kg': weight,
-      });
-      setState(() {
-        _sets.add({
-          'exercise': _selectedExercise!['name'],
-          'reps': reps,
-          'weight': weight,
-        });
-        _repsCtrl.clear();
-        _weightCtrl.clear();
       });
     } catch (_) {}
   }
@@ -451,6 +488,18 @@ class _GymSessionPageState extends State<GymSessionPage> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                if (_selectedExercise != null) ...[
+                  // Dynamic Image Rendering for Current Exercise
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.asset(
+                      'assets/images/${_selectedExercise!['name'].toLowerCase().replaceAll(' ', '_')}.jpg',
+                      height: 180, width: double.infinity, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(height: 180, color: AppColors.surface, child: const Icon(Icons.fitness_center, size: 64, color: AppColors.textMuted)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 if (_exercises.isNotEmpty) ...[
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -487,7 +536,6 @@ class _GymSessionPageState extends State<GymSessionPage> {
                           children: [
                             Expanded(
                               child: ElevatedButton.icon(
-                                // FORCE FINITE WIDTH TO BLOCK GLOBAL THEME CRASH
                                 style: ElevatedButton.styleFrom(minimumSize: const Size(0, 48)),
                                 onPressed: _logSet,
                                 icon: const Icon(Icons.add),

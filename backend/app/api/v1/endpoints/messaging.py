@@ -13,7 +13,6 @@ from app.models.messaging import ConversationMember, Message
 from app.services.messaging_service import messaging_service
 from app.services.presence_service import presence_service
 from app.services.connection_manager import manager
-from app.services.auth_service import auth_service
 from app.core.exceptions import NotFoundError
 
 
@@ -84,6 +83,8 @@ async def get_messages(
             "sender_id": str(m.sender_id),
             "content": m.content,
             "status": m.status,
+            "is_pinned": m.is_pinned, # 🔥 Exposed to Flutter
+            "reply_to": {"id": str(m.reply_to.id), "content": m.reply_to.content} if m.reply_to else None, # 🔥 Exposed
             "is_deleted": m.is_deleted,
             "created_at": m.created_at.isoformat(),
         }
@@ -164,7 +165,7 @@ async def websocket_endpoint(
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            select(User).where(User.id == uuid.UUID(user_id_str))  # convert to UUID
+            select(User).where(User.id == uuid.UUID(user_id_str)) 
         )
         user = result.scalar_one_or_none()
         if not user or not user.is_active:
@@ -176,12 +177,10 @@ async def websocket_endpoint(
     await presence_service.set_online(user_id)
     await _broadcast_presence(user_id, online=True)
 
-# Push unread summary to client on connect
+    # Push unread summary to client on connect
     async with AsyncSessionLocal() as db:
         memberships_result = await db.execute(
-            select(ConversationMember).where(
-                ConversationMember.user_id == user.id
-            )
+            select(ConversationMember).where(ConversationMember.user_id == user.id)
         )
         memberships = memberships_result.scalars().all()
 
@@ -226,20 +225,22 @@ async def websocket_endpoint(
             if msg_type == "send_message":
                 conversation_id = data.get("conversation_id")
                 content = data.get("content", "").strip()
+                reply_to_id = data.get("reply_to_id") # 🔥 Check for reply reference
+                
                 if not conversation_id or not content:
                     continue
 
                 async with AsyncSessionLocal() as db:
                     try:
                         conv_uuid = uuid.UUID(conversation_id)
-                        conv = await messaging_service.get_conversation(
-                            db, conv_uuid, user.id
-                        )
+                        conv = await messaging_service.get_conversation(db, conv_uuid, user.id)
+                        
                         msg = await messaging_service.save_message(
-                            db, conv_uuid, user.id, content
+                            db, conv_uuid, user.id, content,
+                            reply_to_id=uuid.UUID(reply_to_id) if reply_to_id else None
                         )
                         await db.commit()
-                        await db.refresh(msg)
+                        await db.refresh(msg, ["reply_to"])
 
                         payload = {
                             "type": "new_message",
@@ -249,14 +250,13 @@ async def websocket_endpoint(
                                 "sender_id": str(msg.sender_id),
                                 "content": msg.content,
                                 "status": msg.status,
+                                "is_pinned": msg.is_pinned,
+                                "reply_to": {"id": str(msg.reply_to.id), "content": msg.reply_to.content} if msg.reply_to else None,
                                 "created_at": msg.created_at.isoformat(),
                             },
                         }
 
-                        other = next(
-                            (m for m in conv.members if str(m.user_id) != user_id),
-                            None,
-                        )
+                        other = next((m for m in conv.members if str(m.user_id) != user_id), None)
                         if other:
                             delivered = await manager.send(str(other.user_id), payload)
                             if delivered:
@@ -269,10 +269,33 @@ async def websocket_endpoint(
 
                     except Exception as e:
                         await db.rollback()
-                        await manager.send(user_id, {
-                            "type": "error",
-                            "message": str(e),
-                        })
+                        await manager.send(user_id, {"type": "error", "message": str(e)})
+
+            # ── Pin message ───────────────────────────────────────────────
+            elif msg_type == "pin_message":
+                msg_id = data.get("message_id")
+                if not msg_id:
+                    continue
+                    
+                async with AsyncSessionLocal() as db:
+                    try:
+                        msg = await messaging_service.toggle_pin(db, uuid.UUID(msg_id), user.id)
+                        await db.commit()
+                        
+                        conv = await messaging_service.get_conversation(db, msg.conversation_id, user.id)
+                        
+                        broadcast_payload = {
+                            "type": "message_pinned",
+                            "message_id": str(msg.id),
+                            "is_pinned": msg.is_pinned,
+                            "content": msg.content
+                        }
+                        
+                        # Tell everyone in the chat that the pin status changed
+                        for member in conv.members:
+                            await manager.send(str(member.user_id), broadcast_payload)
+                    except Exception:
+                        await db.rollback()
 
             # ── Mark read ─────────────────────────────────────────────────
             elif msg_type == "mark_read":
@@ -283,16 +306,11 @@ async def websocket_endpoint(
                 async with AsyncSessionLocal() as db:
                     try:
                         conv_uuid = uuid.UUID(conversation_id)
-                        conv = await messaging_service.get_conversation(
-                            db, conv_uuid, user.id
-                        )
+                        conv = await messaging_service.get_conversation(db, conv_uuid, user.id)
                         await messaging_service.mark_read(db, conv_uuid, user.id)
                         await db.commit()
 
-                        other = next(
-                            (m for m in conv.members if str(m.user_id) != user_id),
-                            None,
-                        )
+                        other = next((m for m in conv.members if str(m.user_id) != user_id), None)
                         if other:
                             await manager.send(str(other.user_id), {
                                 "type": "messages_read",
@@ -312,13 +330,8 @@ async def websocket_endpoint(
 
                 async with AsyncSessionLocal() as db:
                     try:
-                        conv = await messaging_service.get_conversation(
-                            db, uuid.UUID(conversation_id), user.id
-                        )
-                        other = next(
-                            (m for m in conv.members if str(m.user_id) != user_id),
-                            None,
-                        )
+                        conv = await messaging_service.get_conversation(db, uuid.UUID(conversation_id), user.id)
+                        other = next((m for m in conv.members if str(m.user_id) != user_id), None)
                         if other:
                             await manager.send(str(other.user_id), {
                                 "type": "typing",

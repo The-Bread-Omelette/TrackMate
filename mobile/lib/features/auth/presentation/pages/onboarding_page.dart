@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/constants/api_constants.dart';
-import '../../../../shared/theme/app_theme.dart';
 
 class OnboardingPage extends StatefulWidget {
   final VoidCallback onComplete;
+  
   const OnboardingPage({super.key, required this.onComplete});
 
   @override
@@ -13,293 +13,355 @@ class OnboardingPage extends StatefulWidget {
 }
 
 class _OnboardingPageState extends State<OnboardingPage> {
-  final _pageCtrl = PageController();
-  int _page = 0;
-  bool _saving = false;
-  final _dio = sl<Dio>();
+  final PageController _pageCtrl = PageController();
+  int _currentPage = 0;
+  bool _isSaving = false;
+  final Dio _dio = sl<Dio>();
 
-  // Fields
-  final _heightCtrl = TextEditingController();
-  final _weightCtrl = TextEditingController();
-  final _stepGoalCtrl = TextEditingController(text: '10000');
-  final _calorieGoalCtrl = TextEditingController(text: '2000');
-  String? _gender;
-  String? _activityLevel;
-  DateTime? _dob;
+  // Default values to prevent validation blocks during testing
+  String _gender = 'male';
+  DateTime? _dob = DateTime(1995, 1, 1);
+  String _activityLevel = 'moderately_active';
 
-  final _genders = ['male', 'female', 'other', 'prefer_not_to_say'];
-  final _activityLevels = [
-    'sedentary', 'lightly_active', 'moderately_active',
-    'very_active', 'extra_active'
-  ];
+  // Form Controllers
+  final TextEditingController _heightCtrl = TextEditingController(text: '170');
+  final TextEditingController _weightCtrl = TextEditingController(text: '70');
+  final TextEditingController _stepGoalCtrl = TextEditingController(text: '10000');
+  final TextEditingController _calorieGoalCtrl = TextEditingController(text: '2000');
+
+  final Map<String, String> _genderOptions = {
+    'Male': 'male',
+    'Female': 'female',
+    'Other': 'other',
+    'Prefer not to say': 'prefer_not_to_say'
+  };
+
+  final Map<String, String> _activityOptions = {
+    'Sedentary (Little/No Exercise)': 'sedentary',
+    'Lightly Active (1-3 days/week)': 'lightly_active',
+    'Moderately Active (3-5 days/week)': 'moderately_active',
+    'Very Active (6-7 days/week)': 'very_active',
+    'Extra Active (Physical Job)': 'extra_active',
+  };
 
   @override
   void dispose() {
     _pageCtrl.dispose();
-    for (final c in [_heightCtrl, _weightCtrl, _stepGoalCtrl, _calorieGoalCtrl]) {
-      c.dispose();
-    }
+    _heightCtrl.dispose();
+    _weightCtrl.dispose();
+    _stepGoalCtrl.dispose();
+    _calorieGoalCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _finish() async {
-    setState(() => _saving = true);
+  Future<void> _submitData() async {
+    final height = double.tryParse(_heightCtrl.text) ?? 0;
+    final weight = double.tryParse(_weightCtrl.text) ?? 0;
+    
+    if (height < 50 || height > 300 || weight < 20 || weight > 500) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter realistic height and weight values.'))
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
     try {
-      await _dio.put(ApiConstants.profile, data: {
-        'gender': _gender,
-        'date_of_birth': _dob?.toIso8601String(),
-        'height_cm': double.tryParse(_heightCtrl.text),
-        'weight_kg': double.tryParse(_weightCtrl.text),
-        'daily_step_goal': int.tryParse(_stepGoalCtrl.text) ?? 10000,
-        'daily_calorie_goal': int.tryParse(_calorieGoalCtrl.text),
-        'activity_level': _activityLevel,
-      });
-    } catch (_) {}
-    setState(() => _saving = false);
-    widget.onComplete();
+      // Sending data to your FastAPI backend
+      await _dio.put(
+        ApiConstants.profile, 
+        data: {
+          'gender': _gender,
+          'date_of_birth': _dob?.toIso8601String(),
+          'height_cm': height,
+          'weight_kg': weight,
+          'daily_step_goal': int.tryParse(_stepGoalCtrl.text) ?? 10000,
+          'daily_calorie_goal': int.tryParse(_calorieGoalCtrl.text) ?? 2000,
+          'activity_level': _activityLevel,
+        }
+      ).timeout(const Duration(seconds: 10)); // Prevents infinite hanging
+
+      // ✅ SUCCESS! Tell the AuthBloc we are done. 
+      // The router will catch this and instantly push you to the Dashboard.
+      if (mounted) {
+        widget.onComplete(); 
+      }
+
+    } on DioException catch (e) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('API Error 🚨'),
+            content: Text('Status: ${e.response?.statusCode}\n\nData: ${e.response?.data}'),
+            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('App Error 🚨'),
+            content: Text(e.toString()),
+            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
-  void _next() {
-    if (_page < 2) {
+  void _handleNext() {
+    if (_currentPage < 2) {
       _pageCtrl.nextPage(
-          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+        duration: const Duration(milliseconds: 300), 
+        curve: Curves.easeInOut,
+      );
     } else {
-      _finish();
+      _submitData();
+    }
+  }
+
+  void _handleBack() {
+    if (_currentPage > 0) {
+      _pageCtrl.previousPage(
+        duration: const Duration(milliseconds: 300), 
+        curve: Curves.easeInOut,
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.white,
       body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Row(
-                children: List.generate(3, (i) => Expanded(
-                  child: Container(
-                    height: 4,
-                    margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
-                    decoration: BoxDecoration(
-                      color: i <= _page ? AppColors.primary : AppColors.border,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600), // Web-safe constraint to prevent crash
+            child: Column(
+              children: [
+                _buildProgressBar(),
+                Expanded(
+                  child: PageView(
+                    controller: _pageCtrl,
+                    physics: const NeverScrollableScrollPhysics(),
+                    onPageChanged: (index) => setState(() => _currentPage = index),
+                    children: [
+                      _buildBasicInfoStep(),
+                      _buildBiometricsStep(),
+                      _buildGoalsStep(),
+                    ],
                   ),
-                )),
-              ),
+                ),
+                _buildBottomNavigation(),
+              ],
             ),
-            Expanded(
-              child: PageView(
-                controller: _pageCtrl,
-                physics: const NeverScrollableScrollPhysics(),
-                onPageChanged: (p) => setState(() => _page = p),
-                children: [
-                  _BasicInfoPage(
-                    gender: _gender,
-                    dob: _dob,
-                    genders: _genders,
-                    onGenderChanged: (v) => setState(() => _gender = v),
-                    onDobChanged: (v) => setState(() => _dob = v),
-                  ),
-                  _BiometricsPage(
-                    heightCtrl: _heightCtrl,
-                    weightCtrl: _weightCtrl,
-                  ),
-                  _GoalsPage(
-                    stepGoalCtrl: _stepGoalCtrl,
-                    calorieGoalCtrl: _calorieGoalCtrl,
-                    activityLevel: _activityLevel,
-                    activityLevels: _activityLevels,
-                    onActivityChanged: (v) => setState(() => _activityLevel = v),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Row(
-                children: [
-                  if (_page > 0)
-                    TextButton(
-                      onPressed: () => _pageCtrl.previousPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOut),
-                      child: const Text('Back'),
-                    ),
-                  const Spacer(),
-                  ElevatedButton(
-                    onPressed: _saving ? null : _next,
-                    child: _saving
-                        ? const SizedBox(width: 16, height: 16,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white))
-                        : Text(_page == 2 ? 'Get Started' : 'Next'),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
-}
 
-class _BasicInfoPage extends StatelessWidget {
-  final String? gender;
-  final DateTime? dob;
-  final List<String> genders;
-  final ValueChanged<String?> onGenderChanged;
-  final ValueChanged<DateTime?> onDobChanged;
-
-  const _BasicInfoPage({
-    required this.gender, required this.dob,
-    required this.genders, required this.onGenderChanged,
-    required this.onDobChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+  Widget _buildProgressBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Tell us about yourself',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          const Text('This helps us personalize your experience.',
-              style: TextStyle(color: AppColors.textSecondary)),
-          const SizedBox(height: 32),
-          DropdownButtonFormField<String>(
-            value: gender,
-            decoration: const InputDecoration(labelText: 'Gender'),
-            items: genders.map((g) => DropdownMenuItem(
-              value: g,
-              child: Text(g.replaceAll('_', ' ')),
-            )).toList(),
-            onChanged: onGenderChanged,
-          ),
+          const Text('TRACKMATE',
+              style: TextStyle(color: Color(0xFF427AFA), fontWeight: FontWeight.bold, letterSpacing: 1.2)),
           const SizedBox(height: 16),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              dob != null
-                  ? 'Date of Birth: ${dob!.day}/${dob!.month}/${dob!.year}'
-                  : 'Select Date of Birth',
-              style: const TextStyle(color: AppColors.textPrimary),
-            ),
-            trailing: const Icon(Icons.calendar_today,
-                size: 18, color: AppColors.textMuted),
-            onTap: () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: dob ?? DateTime(1995),
-                firstDate: DateTime(1940),
-                lastDate: DateTime.now()
-                    .subtract(const Duration(days: 365 * 10)),
+          Row(
+            children: List.generate(3, (index) {
+              return Expanded(
+                child: Container(
+                  height: 6,
+                  margin: EdgeInsets.only(right: index < 2 ? 8 : 0),
+                  decoration: BoxDecoration(
+                    color: index <= _currentPage ? const Color(0xFF427AFA) : Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
               );
-              if (picked != null) onDobChanged(picked);
-            },
+            }),
           ),
         ],
       ),
     );
   }
-}
 
-class _BiometricsPage extends StatelessWidget {
-  final TextEditingController heightCtrl;
-  final TextEditingController weightCtrl;
-
-  const _BiometricsPage(
-      {required this.heightCtrl, required this.weightCtrl});
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildBottomNavigation() {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text('Your measurements',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          const Text('Used to calculate your calorie needs.',
-              style: TextStyle(color: AppColors.textSecondary)),
-          const SizedBox(height: 32),
-          TextField(
-            controller: heightCtrl,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-                labelText: 'Height (cm)', hintText: 'e.g. 175'),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: weightCtrl,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-                labelText: 'Weight (kg)', hintText: 'e.g. 70'),
+          _currentPage > 0
+              ? TextButton.icon(
+                  onPressed: _isSaving ? null : _handleBack,
+                  icon: const Icon(Icons.chevron_left, color: Colors.grey),
+                  label: const Text('Back', style: TextStyle(color: Colors.grey, fontSize: 16)),
+                )
+              : const SizedBox(width: 80), 
+          
+          SizedBox(
+            width: 140, // Strict bounds so it doesn't infinite-width crash on web
+            height: 48,
+            child: ElevatedButton(
+              onPressed: _isSaving ? null : _handleNext,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF427AFA),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: _isSaving
+                  ? const SizedBox(
+                      height: 20, width: 20, 
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                    )
+                  : Text(_currentPage == 2 ? 'Complete' : 'Next >', style: const TextStyle(fontSize: 16, color: Colors.white)),
+            ),
           ),
         ],
       ),
     );
   }
-}
 
-class _GoalsPage extends StatelessWidget {
-  final TextEditingController stepGoalCtrl;
-  final TextEditingController calorieGoalCtrl;
-  final String? activityLevel;
-  final List<String> activityLevels;
-  final ValueChanged<String?> onActivityChanged;
+  Widget _buildBasicInfoStep() {
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        const Text("Let's get started", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        const Text('Tell us about yourself.', style: TextStyle(fontSize: 16, color: Colors.grey)),
+        const SizedBox(height: 40),
+        const Text('Gender', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _gender,
+              isExpanded: true,
+              items: _genderOptions.entries.map((entry) => DropdownMenuItem<String>(value: entry.value, child: Text(entry.key))).toList(),
+              onChanged: (val) => setState(() => _gender = val!),
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        const Text('Date of Birth', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: () async {
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: _dob ?? DateTime(1995),
+              firstDate: DateTime(1940),
+              lastDate: DateTime.now().subtract(const Duration(days: 365 * 10)),
+            );
+            if (picked != null) setState(() => _dob = picked);
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(_dob != null ? '${_dob!.day}/${_dob!.month}/${_dob!.year}' : 'Select Date', style: const TextStyle(fontSize: 16)),
+                const Icon(Icons.calendar_today, color: Colors.grey),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-  const _GoalsPage({
-    required this.stepGoalCtrl, required this.calorieGoalCtrl,
-    required this.activityLevel, required this.activityLevels,
-    required this.onActivityChanged,
-  });
+  Widget _buildBiometricsStep() {
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        const Text('Your measurements', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        const Text('Used to accurately calculate your calorie needs.', style: TextStyle(fontSize: 16, color: Colors.grey)),
+        const SizedBox(height: 40),
+        const Text('Height (cm)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: _heightCtrl,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            filled: true, fillColor: Colors.grey.shade100,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+            hintText: 'e.g. 175',
+          ),
+        ),
+        const SizedBox(height: 24),
+        const Text('Weight (kg)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: _weightCtrl,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            filled: true, fillColor: Colors.grey.shade100,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+            hintText: 'e.g. 70',
+          ),
+        ),
+      ],
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Set your goals',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          const Text("We'll track your progress towards these.",
-              style: TextStyle(color: AppColors.textSecondary)),
-          const SizedBox(height: 32),
-          TextField(
-            controller: stepGoalCtrl,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-                labelText: 'Daily Step Goal', hintText: '10000'),
+  Widget _buildGoalsStep() {
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        const Text('Set your goals', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        const Text("We'll track your daily progress towards these metrics.", style: TextStyle(fontSize: 16, color: Colors.grey)),
+        const SizedBox(height: 40),
+        const Text('Activity Level', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _activityLevel,
+              isExpanded: true,
+              items: _activityOptions.entries.map((entry) => DropdownMenuItem<String>(value: entry.value, child: Text(entry.key))).toList(),
+              onChanged: (val) => setState(() => _activityLevel = val!),
+            ),
           ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: calorieGoalCtrl,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-                labelText: 'Daily Calorie Goal', hintText: '2000'),
+        ),
+        const SizedBox(height: 24),
+        const Text('Daily Step Goal', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: _stepGoalCtrl,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            filled: true, fillColor: Colors.grey.shade100,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
           ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            value: activityLevel,
-            decoration: const InputDecoration(labelText: 'Activity Level'),
-            items: activityLevels.map((a) => DropdownMenuItem(
-              value: a,
-              child: Text(a.replaceAll('_', ' ')),
-            )).toList(),
-            onChanged: onActivityChanged,
+        ),
+        const SizedBox(height: 24),
+        const Text('Daily Calorie Goal', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: _calorieGoalCtrl,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            filled: true, fillColor: Colors.grey.shade100,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

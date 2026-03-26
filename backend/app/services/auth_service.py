@@ -1,6 +1,7 @@
 import secrets
 from app.core.security import hash_password
 from app.models.user import User, UserRole, TrainerStatus
+from app.models.trainer import TrainerApplication  # 🔥 ADDED THIS IMPORT
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import verify_password, create_access_token, create_refresh_token, decode_token
 from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse, UserResponse, AuthResponse, MessageResponse
@@ -43,6 +44,7 @@ class AuthService:
         )
 
         return MessageResponse(message="Account created. Please check your email to verify your account.")
+
     async def login(self, db: AsyncSession, payload: LoginRequest) -> AuthResponse:
         result = await db.execute(select(User).where(User.email == payload.email))
         user = result.scalar_one_or_none()
@@ -59,6 +61,7 @@ class AuthService:
             user=UserResponse.model_validate(user),
             tokens=tokens,
         )
+
     async def verify_email(self, db: AsyncSession, email: str, otp: str) -> AuthResponse:
         result = await db.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
@@ -85,26 +88,42 @@ class AuthService:
     async def approve_trainer(
         self, db: AsyncSession, user_id: str, approve: bool, admin: User
     ) -> User:
+        # 1. Fetch the user
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if not user:
             raise NotFoundError("User")
-        if user.trainer_status != TrainerStatus.PENDING:
-            raise ConflictError("User does not have a pending trainer application")
 
+        # 🔥 FIX 2: Fetch the actual application so we can update it!
+        app_result = await db.execute(
+            select(TrainerApplication)
+            .where(TrainerApplication.user_id == user_id)
+            .order_by(TrainerApplication.submitted_at.desc())
+        )
+        application = app_result.scalars().first()
+        if not application:
+            raise NotFoundError("Trainer application not found for this user")
+
+        # 🔥 FIX 1: Removed the strict "PENDING" check so admins can freely revoke/re-approve.
         if approve:
             user.role = UserRole.TRAINER
             user.trainer_status = TrainerStatus.APPROVED
+            application.status = "approved"  # Update the application table!
             try:
                 email_service.send_trainer_approved_email(user.email, user.full_name)
             except Exception as e:
                 print(f"[Email] Failed to send approval email: {e}")
         else:
+            user.role = UserRole.TRAINEE  # Demote them if rejected/revoked
             user.trainer_status = TrainerStatus.REJECTED
+            application.status = "rejected"  # Update the application table!
             try:
                 email_service.send_trainer_rejected_email(user.email, user.full_name)
             except Exception as e:
                 print(f"[Email] Failed to send rejection email: {e}")
+
+        # Record when the admin took action
+        application.reviewed_at = datetime.now(timezone.utc)
 
         await db.flush()
         await db.refresh(user)
