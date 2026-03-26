@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     ADMIN_FULL_NAME: str = "Admin"
     
     REDIS_URL: str = "redis://localhost:6379"
+    RESEND_API_KEY: str = ""
 
     @property
     def cors_origins_list(self) -> List[str]:
