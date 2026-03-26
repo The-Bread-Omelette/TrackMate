@@ -1,52 +1,88 @@
-import httpx
+import os
+import json
+import base64
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 from app.core.config import settings
 
 class EmailService:
+    def __init__(self):
+        self.scopes = ['https://www.googleapis.com/auth/gmail.send']
+        self.creds = None
+        self._authenticate()
+
+    def _authenticate(self):
+        """Loads credentials from Render Environment Variables OR local token.json"""
+        
+        # 1. Try to load from Render Environment Variable first
+        token_env = os.environ.get('GOOGLE_TOKEN_JSON')
+        
+        if token_env:
+            try:
+                token_info = json.loads(token_env)
+                self.creds = Credentials.from_authorized_user_info(token_info, self.scopes)
+                print("[Email] Loaded Google credentials from Environment Variable.")
+            except Exception as e:
+                print(f"[Email] Failed to parse GOOGLE_TOKEN_JSON env var: {e}")
+                
+        # 2. Fallback to local token.json file (for local development)
+        elif os.path.exists('token.json'):
+            self.creds = Credentials.from_authorized_user_file('token.json', self.scopes)
+            print("[Email] Loaded Google credentials from local token.json file.")
+            
+        # 3. Handle token refresh if it has expired
+        if self.creds and not self.creds.valid:
+            if self.creds.expired and self.creds.refresh_token:
+                try:
+                    self.creds.refresh(Request())
+                    print("[Email] Google access token refreshed successfully.")
+                    
+                    # If we are local, update the physical file
+                    if os.path.exists('token.json'):
+                        with open('token.json', 'w') as token:
+                            token.write(self.creds.to_json())
+                except Exception as e:
+                    print(f"[Email] Failed to refresh token: {e}")
+            else:
+                print("[Email] ERROR: Missing or invalid Google credentials. Cannot send emails.")
+        elif not self.creds:
+             print("[Email] ERROR: No Google credentials found in Environment or local file.")
 
     def _send(self, to: str, subject: str, html: str) -> None:
-        print(f"[Email] _send called. enabled={settings.email_enabled} to={to}")
         if not settings.email_enabled:
             print(f"[Email disabled] To: {to} | Subject: {subject}")
             return
 
-        # Fetch the API key from your settings
-        api_key = getattr(settings, "RESEND_API_KEY", None)
-        
-        if not api_key:
-            print("[Email] ERROR: RESEND_API_KEY is missing from settings.")
-            raise ValueError("RESEND_API_KEY is not configured in environment variables.")
+        if not self.creds or not self.creds.valid:
+            print(f"[Email] Auth failed. Skipping email to {to}")
+            return
 
-        print(f"[Email] Sending via HTTP API to {to}")
+        print(f"[Email] Sending via Gmail API to {to}")
         
-        # Resend API endpoint
-        url = "https://api.resend.com/emails"
-        
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "from": f"{settings.EMAIL_FROM_NAME} <{settings.EMAIL_FROM}>",
-            "to": [to],
-            "subject": subject,
-            "html": html
-        }
-
         try:
-            # We use httpx to make a secure HTTPS request over Port 443
-            with httpx.Client(timeout=10.0) as client:
-                response = client.post(url, headers=headers, json=payload)
-                response.raise_for_status()  # Raises an exception for 4xx/5xx status codes
-                
-                data = response.json()
-                print(f"[Email] Sent successfully to {to}. Provider ID: {data.get('id')}")
-                
-        except httpx.HTTPStatusError as e:
-            print(f"[Email] API HTTP Error: {e.response.status_code} - {e.response.text}")
-            raise
+            # Build the Gmail API service
+            service = build('gmail', 'v1', credentials=self.creds)
+            
+            # Create the email message
+            message = MIMEMultipart("alternative")
+            message['To'] = to
+            message['From'] = f"{settings.EMAIL_FROM_NAME} <{settings.EMAIL_FROM}>"
+            message['Subject'] = subject
+            message.attach(MIMEText(html, 'html'))
+            
+            # Encode as base64url, which the Gmail API requires
+            raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+            body = {'raw': raw_message}
+            
+            # Send it! 'me' is a special keyword for the authenticated user
+            sent_message = service.users().messages().send(userId='me', body=body).execute()
+            print(f"[Email] Sent successfully! Message ID: {sent_message['id']}")
+            
         except Exception as e:
-            print(f"[Email] Request failed: {type(e).__name__}: {e}")
+            print(f"[Email] Failed to send via Gmail API: {e}")
             raise
 
     def send_verification_email(self, to: str, full_name: str, otp: str) -> None:
@@ -76,6 +112,5 @@ class EmailService:
         <p>— TrackMate</p>
         """
         self._send(to, "Your trainer application was not approved", html)
-
 
 email_service = EmailService()
