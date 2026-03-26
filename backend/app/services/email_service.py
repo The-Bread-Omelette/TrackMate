@@ -1,8 +1,5 @@
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import httpx
 from app.core.config import settings
-
 
 class EmailService:
 
@@ -12,22 +9,44 @@ class EmailService:
             print(f"[Email disabled] To: {to} | Subject: {subject}")
             return
 
-        print(f"[Email] Connecting to {settings.SMTP_HOST}:{settings.SMTP_PORT} as {settings.SMTP_USER}")
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = f"{settings.EMAIL_FROM_NAME} <{settings.EMAIL_FROM}>"
-        msg["To"] = to
-        msg.attach(MIMEText(html, "html"))
+        # Fetch the API key from your settings
+        api_key = getattr(settings, "RESEND_API_KEY", None)
+        
+        if not api_key:
+            print("[Email] ERROR: RESEND_API_KEY is missing from settings.")
+            raise ValueError("RESEND_API_KEY is not configured in environment variables.")
+
+        print(f"[Email] Sending via HTTP API to {to}")
+        
+        # Resend API endpoint
+        url = "https://api.resend.com/emails"
+        
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "from": f"{settings.EMAIL_FROM_NAME} <{settings.EMAIL_FROM}>",
+            "to": [to],
+            "subject": subject,
+            "html": html
+        }
 
         try:
-            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-                server.ehlo()
-                server.starttls()
-                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                server.sendmail(settings.EMAIL_FROM, to, msg.as_string())
-                print(f"[Email] Sent successfully to {to}")
+            # We use httpx to make a secure HTTPS request over Port 443
+            with httpx.Client(timeout=10.0) as client:
+                response = client.post(url, headers=headers, json=payload)
+                response.raise_for_status()  # Raises an exception for 4xx/5xx status codes
+                
+                data = response.json()
+                print(f"[Email] Sent successfully to {to}. Provider ID: {data.get('id')}")
+                
+        except httpx.HTTPStatusError as e:
+            print(f"[Email] API HTTP Error: {e.response.status_code} - {e.response.text}")
+            raise
         except Exception as e:
-            print(f"[Email] SMTP error: {type(e).__name__}: {e}")
+            print(f"[Email] Request failed: {type(e).__name__}: {e}")
             raise
 
     def send_verification_email(self, to: str, full_name: str, otp: str) -> None:
