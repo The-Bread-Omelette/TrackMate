@@ -14,6 +14,11 @@ import '../../features/messaging/data/messaging_remote_datasource.dart';
 import '../../features/messaging/presentation/pages/chat_page.dart';
 import '../../features/trainer/presentation/pages/find_trainer_page.dart';
 import '../../features/trainer/presentation/pages/coaching_hub_page.dart';
+import '../../features/nutrition/presentation/pages/food_logging_page.dart';
+import '../../features/workout/presentation/pages/exercise_page.dart';
+
+
+
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
 
@@ -263,7 +268,11 @@ class _WaterCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => _showWaterDialog(context),
+      // 🔥 NEW: Navigates to the Food Logging Page
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const FoodLoggingPage()),
+      ),
       child: Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
@@ -295,40 +304,6 @@ class _WaterCard extends StatelessWidget {
       ),
     );
   }
-
-  void _showWaterDialog(BuildContext context) {
-    final amounts = [150, 250, 350, 500];
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Log Water', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: amounts.map((ml) {
-                return ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    context.read<DashboardBloc>().add(DashboardLogWater(ml));
-                  },
-                  child: Text('${ml}ml'),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _StatsCard extends StatelessWidget {
@@ -337,24 +312,31 @@ class _StatsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
+    return GestureDetector(
+      // 🔥 NEW: Navigates to the Exercise Page
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ExercisePage()),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.fitness_center, color: Colors.orange, size: 32),
-          const SizedBox(height: 16),
-          Text('${data.workoutsThisWeek}',
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          const Text('Workouts', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-          const SizedBox(height: 4),
-          const Text('this week', style: TextStyle(color: AppColors.textMuted, fontSize: 10)),
-        ],
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.fitness_center, color: Colors.orange, size: 32),
+            const SizedBox(height: 16),
+            Text('${data.workoutsThisWeek}',
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            const Text('Workouts', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+            const SizedBox(height: 4),
+            const Text('this week', style: TextStyle(color: AppColors.textMuted, fontSize: 10)),
+          ],
+        ),
       ),
     );
   }
@@ -420,9 +402,9 @@ class _MyTrainerCardState extends State<_MyTrainerCard> {
         width: double.infinity,
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.08),
+          color: AppColors.primary.withValues(alpha:0.08),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+          border: Border.all(color: AppColors.primary.withValues(alpha:0.3)),
         ),
         child: Column(
           children: [
@@ -449,7 +431,7 @@ class _MyTrainerCardState extends State<_MyTrainerCard> {
       decoration: BoxDecoration(
         gradient: const LinearGradient(colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)], begin: Alignment.topLeft, end: Alignment.bottomRight),
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: Colors.blue.withValues(alpha:0.3), blurRadius: 8, offset: const Offset(0, 4))],
       ),
       child: Row(
         children: [
@@ -470,7 +452,7 @@ class _MyTrainerCardState extends State<_MyTrainerCard> {
           ),
           IconButton(
             icon: const Icon(Icons.chat_bubble, color: Colors.white),
-            style: IconButton.styleFrom(backgroundColor: Colors.white.withOpacity(0.2)),
+            style: IconButton.styleFrom(backgroundColor: Colors.white.withValues(alpha:0.2)),
             onPressed: () async {
               try {
                 final msgDs = sl<MessagingRemoteDataSource>();

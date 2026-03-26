@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // REQUIRED FOR INPUT FORMATTERS
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../features/auth/presentation/bloc/auth_bloc.dart';
 import '../../../../features/auth/presentation/bloc/auth_state.dart';
 import '../../../../shared/widgets/main_layout.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../data/nutrition_remote_datasource.dart';
+import '../../../../shared/pages/settings_page.dart';
 
 class FoodLoggingPage extends StatefulWidget {
   const FoodLoggingPage({super.key});
@@ -23,7 +26,6 @@ class _FoodLoggingPageState extends State<FoodLoggingPage> {
   List<dynamic> _loggedMeals = [];
   Map<String, dynamic> _summary = {};
   Map<String, dynamic>? _selectedFood;
-  int _servings = 1;
   bool _searching = false;
   bool _loading = true;
 
@@ -47,10 +49,23 @@ class _FoodLoggingPageState extends State<FoodLoggingPage> {
         _ds.getMeals(),
         _ds.getHydrationSummary(),
       ]);
+
+      final prefs = await SharedPreferences.getInstance();
+      final localWaterGoal = prefs.getInt('local_water_goal') ?? 2500;
+
+      final hydrationData = results[2] as Map<String, dynamic>;
+
+      // Override backend goal with our local goal
+      hydrationData['goal_ml'] = localWaterGoal;
+
+      // Recalculate percentage locally so the progress bar works
+      final totalMl = (hydrationData['total_ml'] ?? 0) as num;
+      hydrationData['percentage'] = (totalMl / localWaterGoal) * 100;
+
       setState(() {
         _summary = results[0] as Map<String, dynamic>;
         _loggedMeals = results[1] as List<dynamic>;
-        _hydration = results[2] as Map<String, dynamic>;
+        _hydration = hydrationData;
       });
     } catch (_) {}
     setState(() => _loading = false);
@@ -69,9 +84,12 @@ class _FoodLoggingPageState extends State<FoodLoggingPage> {
     setState(() => _searching = false);
   }
 
-  Future<void> _logFood() async {
+  // UPDATED: Now accepts grams and calculates the multiplier
+  Future<void> _logFood(double grams) async {
     if (_selectedFood == null) return;
     final f = _selectedFood!;
+    final double servingFactor = grams / 100.0;
+
     try {
       await _ds.logMeal({
         'food_id': f['id'] ?? '',
@@ -80,20 +98,19 @@ class _FoodLoggingPageState extends State<FoodLoggingPage> {
         'protein_per_100g': f['protein_per_100g'] ?? 0,
         'carbs_per_100g': f['carbs_per_100g'] ?? 0,
         'fat_per_100g': f['fat_per_100g'] ?? 0,
-        'serving_size_g': f['serving_size_g'] ?? 100,
-        'serving_label': f['serving_label'] ?? '100g',
-        'servings': _servings.toDouble(),
+        'serving_size_g': 100, // Keep base 100g for backend consistency
+        'serving_label': '100g',
+        'servings': servingFactor,
       });
       setState(() {
         _selectedFood = null;
-        _servings = 1;
         _searchCtrl.clear();
         _searchResults = [];
       });
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Food logged successfully')),
+          SnackBar(content: Text('Logged ${grams.toStringAsFixed(0)}g successfully')),
         );
       }
     } catch (_) {}
@@ -118,73 +135,78 @@ class _FoodLoggingPageState extends State<FoodLoggingPage> {
       child: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-              onRefresh: _load,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _MacrosCard(summary: _summary),
-                    const SizedBox(height: 16),
-                    _WaterSection(
-                      hydration: _hydration,
-                      onLog: (ml) async {
-                        await _ds.logWater(ml);
-                        await _load();
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    _SearchBar(
-                      controller: _searchCtrl,
-                      onChanged: _search,
-                      searching: _searching,
-                    ),
-                    const SizedBox(height: 12),
-                    if (_searchResults.isNotEmpty && _selectedFood == null)
-                      _SearchResults(
-                        results: _searchResults,
-                        onSelect: (food) => setState(() {
-                          _selectedFood = food;
-                          _servings = 1;
-                        }),
-                      ),
-                    if (_selectedFood != null) ...[
-                      const SizedBox(height: 12),
-                      _AddFoodCard(
-                        food: _selectedFood!,
-                        servings: _servings,
-                        onServingsChanged: (v) => setState(() => _servings = v),
-                        onLog: _logFood,
-                        onCancel: () => setState(() => _selectedFood = null),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    _LoggedFoodsCard(
-                      meals: _loggedMeals,
-                      onDelete: _deleteLog,
-                    ),
-                  ],
-                ),
+        onRefresh: _load,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _MacrosCard(summary: _summary),
+              const SizedBox(height: 16),
+              _WaterSection(
+                hydration: _hydration,
+                onLog: (ml) async {
+                  await _ds.logWater(ml);
+                  await _load();
+                },
               ),
-            ),
+              const SizedBox(height: 16),
+              _SearchBar(
+                controller: _searchCtrl,
+                onChanged: _search,
+                searching: _searching,
+              ),
+              const SizedBox(height: 12),
+              if (_searchResults.isNotEmpty && _selectedFood == null)
+                _SearchResults(
+                  results: _searchResults,
+                  onSelect: (food) => setState(() {
+                    _selectedFood = food;
+                  }),
+                ),
+              if (_selectedFood != null) ...[
+                const SizedBox(height: 12),
+                _AddFoodCard(
+                  food: _selectedFood!,
+                  onLog: _logFood,
+                  onCancel: () => setState(() => _selectedFood = null),
+                ),
+              ],
+              const SizedBox(height: 16),
+              _LoggedFoodsCard(
+                meals: _loggedMeals,
+                onDelete: _deleteLog,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
 
 // ── Components ──────────────────────────────────────────────────────────────
 
-class _WaterSection extends StatelessWidget {
+class _WaterSection extends StatefulWidget {
   final Map<String, dynamic> hydration;
   final ValueChanged<int> onLog;
 
   const _WaterSection({required this.hydration, required this.onLog});
 
   @override
+  State<_WaterSection> createState() => _WaterSectionState();
+}
+
+class _WaterSectionState extends State<_WaterSection> {
+  // Default the slider to 250ml (a standard glass)
+  double _sliderValue = 250.0;
+
+  @override
   Widget build(BuildContext context) {
-    final totalMl = (hydration['total_ml'] ?? 0) as num;
-    final goalMl = (hydration['goal_ml'] ?? 2500) as num;
-    final pct = (hydration['percentage'] ?? 0.0) as num;
+    final totalMl = (widget.hydration['total_ml'] ?? 0) as num;
+    final goalMl = (widget.hydration['goal_ml'] ?? 2500) as num;
+    final pct = (widget.hydration['percentage'] ?? 0.0) as num;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -202,12 +224,26 @@ class _WaterSection extends StatelessWidget {
               Row(children: [
                 const Icon(Icons.water_drop, color: Colors.blue, size: 18),
                 const SizedBox(width: 6),
-                const Text('Water Intake',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('Water Intake', style: TextStyle(fontWeight: FontWeight.bold)),
               ]),
-              Text('${totalMl.toStringAsFixed(0)} / ${goalMl.toInt()} ml',
-                  style: const TextStyle(
-                      color: AppColors.textSecondary, fontSize: 13)),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('${totalMl.toStringAsFixed(0)} / ${goalMl.toInt()} ml',
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                  const SizedBox(height: 2),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SettingsPage()),
+                      );
+                    },
+                    child: const Text('Change water goal',
+                        style: TextStyle(color: Colors.blue, fontSize: 11, decoration: TextDecoration.underline)),
+                  ),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -220,26 +256,50 @@ class _WaterSection extends StatelessWidget {
               minHeight: 8,
             ),
           ),
-          const SizedBox(height: 12),
+
+          const SizedBox(height: 20),
+
+          // 🔥 NEW: Slider Input Area
           Row(
-            children: [250, 350, 500]
-                .map((ml) => Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: OutlinedButton(
-                        onPressed: () => onLog(ml),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          side: const BorderSide(color: Colors.blue),
-                          foregroundColor: Colors.blue,
-                        ),
-                        child: Text('+${ml}ml',
-                            style: const TextStyle(fontSize: 12)),
-                      ),
-                    ))
-                .toList(),
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Add: ${_sliderValue.toInt()} ml',
+                  style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+              OutlinedButton(
+                // Disable the button if the slider is at 0
+                onPressed: _sliderValue > 0 ? () {
+                  widget.onLog(_sliderValue.toInt());
+                  // Optional: reset slider back to a standard glass size after logging
+                  setState(() => _sliderValue = 250.0);
+                } : null,
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: _sliderValue > 0 ? Colors.blue : Colors.grey),
+                  foregroundColor: Colors.blue,
+                ),
+                child: const Text('Log Amount'),
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: Colors.blue,
+              inactiveTrackColor: Colors.blue.withValues(alpha:0.2),
+              thumbColor: Colors.blue,
+              overlayColor: Colors.blue.withValues(alpha:0.1),
+              valueIndicatorColor: Colors.blue,
+            ),
+            child: Slider(
+              value: _sliderValue,
+              min: 0,
+              max: 10000, // 10 Liters maximum
+              divisions: 200, // Creates snaps every 50ml (10000 / 50)
+              label: '${_sliderValue.toInt()} ml',
+              onChanged: (value) {
+                setState(() {
+                  _sliderValue = value;
+                });
+              },
+            ),
           ),
         ],
       ),
@@ -300,7 +360,7 @@ class _MacrosCard extends StatelessWidget {
             Text(label, style: const TextStyle(fontSize: 12)),
             Text('${current.toStringAsFixed(1)}g / ${goal.toInt()}g',
                 style:
-                    const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
           ],
         ),
         const SizedBox(height: 6),
@@ -339,13 +399,13 @@ class _SearchBar extends StatelessWidget {
         prefixIcon: const Icon(Icons.search, color: AppColors.textMuted),
         suffixIcon: searching
             ? const Padding(
-                padding: EdgeInsets.all(12),
-                child: SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              )
+          padding: EdgeInsets.all(12),
+          child: SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        )
             : null,
       ),
     );
@@ -414,25 +474,49 @@ class _SearchResults extends StatelessWidget {
   }
 }
 
-class _AddFoodCard extends StatelessWidget {
+// ── UPDATED: Now a StatefulWidget to handle text input and active formatting ──
+class _AddFoodCard extends StatefulWidget {
   final Map<String, dynamic> food;
-  final int servings;
-  final ValueChanged<int> onServingsChanged;
-  final VoidCallback onLog;
+  final ValueChanged<double> onLog;
   final VoidCallback onCancel;
 
   const _AddFoodCard({
     required this.food,
-    required this.servings,
-    required this.onServingsChanged,
     required this.onLog,
     required this.onCancel,
   });
 
   @override
+  State<_AddFoodCard> createState() => _AddFoodCardState();
+}
+
+class _AddFoodCardState extends State<_AddFoodCard> {
+  late TextEditingController _gramsCtrl;
+  double _grams = 100.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _gramsCtrl = TextEditingController(text: '100');
+  }
+
+  @override
+  void dispose() {
+    _gramsCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final String name = food['name'] ?? '';
+    final String name = widget.food['name'] ?? '';
     final String imgName = name.toLowerCase().replaceAll(' ', '_');
+
+    // Dynamic math updates automatically as the user types
+    final double factor = _grams / 100.0;
+    final double calories = (widget.food['calories_per_100g'] ?? 0) * factor;
+    final double protein = (widget.food['protein_per_100g'] ?? 0) * factor;
+    final double carbs = (widget.food['carbs_per_100g'] ?? 0) * factor;
+    final double fat = (widget.food['fat_per_100g'] ?? 0) * factor;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -473,8 +557,8 @@ class _AddFoodCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'Per 100g: ${(food['calories_per_100g'] ?? 0).toStringAsFixed(0)} kcal · P: ${(food['protein_per_100g'] ?? 0).toStringAsFixed(1)}g · C: ${(food['carbs_per_100g'] ?? 0).toStringAsFixed(1)}g',
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            'Total: ${calories.toStringAsFixed(0)} kcal · P: ${protein.toStringAsFixed(1)}g · C: ${carbs.toStringAsFixed(1)}g · F: ${fat.toStringAsFixed(1)}g',
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 16),
           Container(
@@ -486,23 +570,31 @@ class _AddFoodCard extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Servings'),
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.remove),
-                      onPressed: servings > 1
-                          ? () => onServingsChanged(servings - 1)
-                          : null,
+                const Text('Amount eaten:'),
+                SizedBox(
+                  width: 100,
+                  child: TextField(
+                    controller: _gramsCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    textAlign: TextAlign.right,
+                    // Active formatting rules implemented here
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                      LengthLimitingTextInputFormatter(5),
+                    ],
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                      border: OutlineInputBorder(),
+                      suffixText: 'g',
+                      hintText: '0',
                     ),
-                    Text('$servings',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16)),
-                    IconButton(
-                      icon: const Icon(Icons.add),
-                      onPressed: () => onServingsChanged(servings + 1),
-                    ),
-                  ],
+                    onChanged: (val) {
+                      setState(() {
+                        _grams = double.tryParse(val) ?? 0.0;
+                      });
+                    },
+                  ),
                 ),
               ],
             ),
@@ -512,14 +604,14 @@ class _AddFoodCard extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: onCancel,
+                  onPressed: widget.onCancel,
                   child: const Text('Cancel'),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: onLog,
+                  onPressed: _grams > 0 ? () => widget.onLog(_grams) : null,
                   child: const Text('Log Food'),
                 ),
               ),
@@ -599,8 +691,9 @@ class _LoggedFoodsCard extends StatelessWidget {
                             Text(name,
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold)),
+                            // UPDATED: Now neatly displays the total grams eaten
                             Text(
-                              '${(meal['calories'] ?? 0).toStringAsFixed(0)} kcal · ${meal['servings']}x ${meal['serving_label']}',
+                              '${(meal['calories'] ?? 0).toStringAsFixed(0)} kcal · ${(meal['servings'] * 100).toStringAsFixed(0)}g',
                               style: const TextStyle(
                                   color: AppColors.textSecondary, fontSize: 12),
                             ),
