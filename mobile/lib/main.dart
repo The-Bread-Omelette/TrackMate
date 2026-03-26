@@ -6,7 +6,7 @@ import 'core/router/app_router.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
 import 'features/auth/presentation/bloc/auth_event.dart';
 import 'shared/theme/app_theme.dart';
-import 'features/fitness/services/pedometer_service.dart';
+// import 'features/fitness/services/pedometer_service.dart';
 
 // FIX: Changed to Future<void> and async
 Future<void> main() async {
@@ -14,7 +14,7 @@ Future<void> main() async {
   setupDependencies();
   
   // FIX: Commented this out until you actually create the initBackgroundService function!
-  await initBackgroundService(); 
+  // await initBackgroundService();
   
   runApp(const TrackMateApp());
 }
