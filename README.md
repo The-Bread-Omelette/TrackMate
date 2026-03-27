@@ -1,9 +1,9 @@
 # Pre-built APK
 
-The ready-to-install Android APK is available at:
+The ready-to-install Android APK is available at the base of the Repository:
 
 ```
-/build/app/outputs/flutter-apk/
+app-release.apk
 ```
 
 Download `app-release.apk` from that folder and install it directly on your Android device — no build step required.
