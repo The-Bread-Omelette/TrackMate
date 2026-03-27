@@ -9,7 +9,9 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../data/analytics_remote_datasource.dart';
 
 class AnalyticsPage extends StatefulWidget {
-  const AnalyticsPage({super.key});
+  // 🔥 ADDED THIS PARAMETER SO EXERCISE PAGE CAN ROUTE TO IT
+  final int initialView;
+  const AnalyticsPage({super.key, this.initialView = 0});
 
   @override
   State<AnalyticsPage> createState() => _AnalyticsPageState();
@@ -28,6 +30,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   @override
   void initState() {
     super.initState();
+    // 🔥 STARTS ON THE VIEW PASSED BY THE BUTTON (0 for Overview, 1 for Detailed)
+    _selectedView = widget.initialView;
     _load();
   }
 
@@ -49,8 +53,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     } catch (_) {}
     setState(() => _loading = false);
   }
-
-  @override
+@override
   Widget build(BuildContext context) {
     final authState = context.read<AuthBloc>().state;
     final user = authState is AuthAuthenticatedState ? authState.user : null;
@@ -61,6 +64,19 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       title: 'Analytics',
       child: Column(
         children: [
+          // 🔥 NEW: Conditional Back Button
+          if (Navigator.canPop(context))
+            Padding(
+              padding: const EdgeInsets.only(left: 8.0, top: 8.0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back, color: AppColors.primary),
+                  label: const Text('Back to Exercise', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ),
           Container(
             color: AppColors.surface,
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
@@ -95,6 +111,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       ),
     );
   }
+ 
 
   Widget _buildOverview() {
     return Column(
@@ -123,7 +140,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       return const Center(child: Text('No step data yet', style: TextStyle(color: AppColors.textMuted)));
     }
     final spots = _stepsHistory.asMap().entries.map((e) {
-      final steps = (e.value['steps'] as num).toDouble();
+      // 🔥 ADDED ?? 0 TO PREVENT NULL CRASHES
+      final steps = ((e.value['steps'] ?? 0) as num).toDouble();
       return FlSpot(e.key.toDouble(), steps);
     }).toList();
 
@@ -266,7 +284,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       return const Center(child: Text('No weight data yet', style: TextStyle(color: AppColors.textMuted)));
     }
     final spots = _weightTrend.asMap().entries.map((e) {
-      final w = (e.value['weight_kg'] as num).toDouble();
+      // 🔥 ADDED ?? 0 TO PREVENT NULL CRASHES
+      final w = ((e.value['weight_kg'] ?? 0) as num).toDouble();
       return FlSpot(e.key.toDouble(), w);
     }).toList();
 
@@ -322,7 +341,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       ),
       borderData: FlBorderData(show: false),
       barGroups: _stepsHistory.asMap().entries.map((e) {
-        final steps = (e.value['steps'] as num).toDouble();
+        // 🔥 ADDED ?? 0 TO PREVENT NULL CRASHES
+        final steps = ((e.value['steps'] ?? 0) as num).toDouble();
         return BarChartGroupData(
           x: e.key,
           barRods: [
