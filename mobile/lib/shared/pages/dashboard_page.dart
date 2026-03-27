@@ -18,7 +18,8 @@ import '../../features/nutrition/presentation/pages/food_logging_page.dart';
 import '../../features/workout/presentation/pages/exercise_page.dart';
 import 'package:dio/dio.dart';
 import '../../../main.dart';
-import '../../features/analytics/presentation/pages/analytics_page.dart'; // Also make sure AnalyticsPage is imported!
+import '../../features/analytics/presentation/pages/analytics_page.dart';
+
 // 🔥 HELPER: Centralized modern card decoration for aesthetics
 BoxDecoration _modernCardDecoration() {
   return BoxDecoration(
@@ -97,7 +98,7 @@ class _DashboardBody extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 🔥 NEW: Aesthetic Greeting Header
+                // Aesthetic Greeting Header
                 Text(
                   'Hello, ${user.fullName.split(' ').first} 👋',
                   style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
@@ -112,8 +113,7 @@ class _DashboardBody extends StatelessWidget {
                 _MyTrainerCard(isTrainer: isTrainer),
                 if (!isTrainer) const SizedBox(height: 16),
 
-                // 🔥 NEW: BMI Card added to layout
-
+                // BMI Card
                 _BMICard(key: ValueKey(state.hashCode)),
                 const SizedBox(height: 16),
 
@@ -129,20 +129,13 @@ class _DashboardBody extends StatelessWidget {
                     Expanded(child: _StatsCard(data: data)),
                   ],
                 ),
+                const SizedBox(height: 16),
+
                 _DynamicInsightCard(
                     key: ValueKey('insight_${state.hashCode}'),
                     data: data
                 ),
 
-                const SizedBox(height: 16),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: _WaterCard(data: data)),
-                    const SizedBox(width: 16),
-                    Expanded(child: _StatsCard(data: data)),
-                  ],
-                ),
                 const SizedBox(height: 24),
               ],
             ),
@@ -153,11 +146,9 @@ class _DashboardBody extends StatelessWidget {
   }
 }
 
-// ── NEW BMI CARD ─────────────────────────────────────────────────────────────
 // ── SMART BMI CARD ─────────────────────────────────────────────────────────────
 
 class _BMICard extends StatefulWidget {
-  // 🔥 ADDED: super.key allows the dashboard to force this widget to rebuild
   const _BMICard({super.key});
 
   @override
@@ -178,7 +169,6 @@ class _BMICardState extends State<_BMICard> {
   Future<void> _fetchBiometrics() async {
     try {
       final dio = sl<Dio>();
-      // 🔥 Fetching the exact variables saved during Onboarding
       final res = await dio.get(ApiConstants.profile);
       final p = res.data['profile'] as Map<String, dynamic>? ?? {};
 
@@ -204,7 +194,6 @@ class _BMICardState extends State<_BMICard> {
       );
     }
 
-    // If data is missing (e.g., they skipped onboarding), prompt them
     if (_heightCm == null || _weightKg == null || _heightCm! <= 0 || _weightKg! <= 0) {
       return Container(
         padding: const EdgeInsets.all(20),
@@ -227,11 +216,9 @@ class _BMICardState extends State<_BMICard> {
       );
     }
 
-    // 🔥 Exact Math using your Onboarding variables
     final double heightMeters = _heightCm! / 100;
     final double bmi = _weightKg! / (heightMeters * heightMeters);
 
-    // Determine category and color
     String category = '';
     Color badgeColor = Colors.grey;
 
@@ -289,10 +276,7 @@ class _BMICardState extends State<_BMICard> {
   }
 }
 
-// ── EXISTING CARDS (Updated with Modern Decoration) ──────────────────────────
-
-// 🔥 Make sure you add this import to the top of dashboard_page.dart:
-// import '../../../main.dart'; // to access globalPedometer
+// ── EXISTING CARDS ──────────────────────────────────────────────────────────
 
 class _StepsCard extends StatelessWidget {
   final data;
@@ -301,7 +285,6 @@ class _StepsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      // 🔥 NEW: Tapping the steps card opens the Analytics Page (View 0: Overview)
       onTap: () {
         Navigator.push(
           context,
@@ -317,10 +300,9 @@ class _StepsCard extends StatelessWidget {
             const Text('Daily Steps', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
             const SizedBox(height: 24),
 
-            // 🔥 Use StreamBuilder to update the UI live as you walk
             StreamBuilder<int>(
                 stream: globalPedometer.steps,
-                initialData: data.steps, // Start with whatever the backend said
+                initialData: data.steps,
                 builder: (context, snapshot) {
                   final liveSteps = snapshot.data ?? 0;
                   final double livePercentage = data.stepGoal > 0 ? (liveSteps / data.stepGoal * 100) : 0;
@@ -508,44 +490,49 @@ class _DynamicInsightCardState extends State<_DynamicInsightCard> {
       );
     }
 
-    // Calculate Net Calories
     final net = widget.data.caloriesEaten - widget.data.caloriesBurned;
-
-    // 🔥 Feed the data to our Logic Engine!
     final insight = InsightEngine.getInsight(_activityLevel, net.toDouble());
 
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: _modernCardDecoration(),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Dailyr Insight', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
-              Icon(Icons.auto_awesome, color: Colors.purple.shade300, size: 20),
-            ],
+          // 🔥 Cleaned up header, gracefully centered with slight letter spacing
+          const Center(
+            child: Text(
+              'Daily Insight',
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                  color: AppColors.textSecondary
+              ),
+            ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
 
-          // The Dynamic Badge and Title
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: insight.color.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(insight.icon, color: insight.color),
+                child: Icon(insight.icon, color: insight.color, size: 28),
               ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(insight.title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: insight.color)),
+                    Text(
+                        insight.title,
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: insight.color)
+                    ),
+                    const SizedBox(height: 4),
                     Text(
                         'Net Calories: ${net > 0 ? '+' : ''}${net.toStringAsFixed(0)}',
                         style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.textSecondary)
@@ -555,19 +542,28 @@ class _DynamicInsightCardState extends State<_DynamicInsightCard> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
 
-          // The Dynamic Description
+          // 🔥 Upgraded, beautiful, full-width elegant quote box
           Container(
-            padding: const EdgeInsets.all(16),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
             decoration: BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.border),
+              color: insight.color.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: insight.color.withValues(alpha: 0.15)),
             ),
             child: Text(
-              insight.description,
-              style: const TextStyle(fontSize: 14, height: 1.4),
+              "\"${insight.description}\"",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 15,
+                height: 1.5,
+                fontWeight: FontWeight.w500,
+                fontStyle: FontStyle.italic,
+                color: AppColors.textPrimary,
+                letterSpacing: 0.3,
+              ),
             ),
           ),
         ],
@@ -589,7 +585,7 @@ class _WaterCard extends StatelessWidget {
       ),
       child: Container(
         padding: const EdgeInsets.all(24),
-        decoration: _modernCardDecoration(), // 🔥 Applied aesthetic upgrade
+        decoration: _modernCardDecoration(),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -629,7 +625,7 @@ class _StatsCard extends StatelessWidget {
       ),
       child: Container(
         padding: const EdgeInsets.all(24),
-        decoration: _modernCardDecoration(), // 🔥 Applied aesthetic upgrade
+        decoration: _modernCardDecoration(),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -706,7 +702,7 @@ class _MyTrainerCardState extends State<_MyTrainerCard> {
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: AppColors.primary.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(20), // 🔥 Aesthetic upgrade
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
         ),
         child: Column(
@@ -732,7 +728,7 @@ class _MyTrainerCardState extends State<_MyTrainerCard> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-        borderRadius: BorderRadius.circular(20), // 🔥 Aesthetic upgrade
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [BoxShadow(color: Colors.blue.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
       ),
       child: Row(
