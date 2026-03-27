@@ -26,6 +26,9 @@ class MainLayout extends StatefulWidget {
 class _MainLayoutState extends State<MainLayout> {
   @override
   Widget build(BuildContext context) {
+    // Check if there is a page to go back to in the navigation stack
+    final bool canPop = Navigator.canPop(context);
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -37,6 +40,8 @@ class _MainLayoutState extends State<MainLayout> {
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         iconTheme: const IconThemeData(color: AppColors.textPrimary),
+        // 🔥 THE FIX: Show back button on sub-pages, otherwise default to Drawer menu
+        leading: canPop ? const BackButton() : null,
       ),
       drawer: _AppDrawer(user: widget.user),
       body: widget.child,
@@ -137,8 +142,8 @@ class _AppDrawer extends StatelessWidget {
       leading: Icon(icon, color: AppColors.textSecondary, size: 20),
       title: Text(label, style: const TextStyle(fontSize: 14)),
       onTap: () {
-        // FIX: Safely pop the drawer, then WAIT for the animation to finish before routing
-        Navigator.of(context).pop(); 
+        // Safely pop the drawer, then WAIT for the animation to finish before routing
+        Navigator.of(context).pop();
         Future.delayed(const Duration(milliseconds: 300), () {
           if (context.mounted) context.go(route);
         });

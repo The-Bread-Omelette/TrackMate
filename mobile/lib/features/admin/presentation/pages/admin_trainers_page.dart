@@ -15,7 +15,7 @@ class _AdminTrainersPageState extends State<AdminTrainersPage> {
   
   Map<String, dynamic> _data = {}; 
   bool _loading = true;
-  String _currentTab = 'pending'; // 🔥 NEW: Tracks which list we are viewing
+  String _currentTab = 'pending';
 
   @override
   void initState() {
@@ -27,8 +27,56 @@ class _AdminTrainersPageState extends State<AdminTrainersPage> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      // 🔥 Fetches data strictly based on the selected tab
-      _data = await _ds.getTrainerApplications(status: _currentTab);
+      // 🔥 FRONTEND TRICK: Fetch all tabs to find the LATEST status for each user
+      final pRes = await _ds.getTrainerApplications(status: 'pending');
+      final aRes = await _ds.getTrainerApplications(status: 'approved');
+      final rRes = await _ds.getTrainerApplications(status: 'rejected');
+
+      // Inject the status into the objects so we can track them after combining
+      final pApps = (pRes['applications'] as List? ?? []).map((e) => {...e as Map<String,dynamic>, 'status': 'pending'}).toList();
+      final aApps = (aRes['applications'] as List? ?? []).map((e) => {...e as Map<String,dynamic>, 'status': 'approved'}).toList();
+      final rApps = (rRes['applications'] as List? ?? []).map((e) => {...e as Map<String,dynamic>, 'status': 'rejected'}).toList();
+
+      final allAppsList = [...pApps, ...aApps, ...rApps];
+
+      // 🔥 FIX: Sort by date (newest first) using both possible date keys
+      allAppsList.sort((a, b) {
+        final dateA = DateTime.tryParse(a['created_at']?.toString() ?? a['submitted_at']?.toString() ?? '') ?? DateTime(2000);
+        final dateB = DateTime.tryParse(b['created_at']?.toString() ?? b['submitted_at']?.toString() ?? '') ?? DateTime(2000);
+        return dateB.compareTo(dateA); 
+      });
+
+      // Deduplicate by user_id, keeping only the most recent application
+      final Map<String, dynamic> latestAppsPerUser = {};
+      for (final app in allAppsList) {
+        final uid = app['user_id'] ?? app['id'];
+        if (!latestAppsPerUser.containsKey(uid)) {
+          latestAppsPerUser[uid] = app;
+        }
+      }
+
+      final filteredApps = latestAppsPerUser.values.toList();
+      
+      // Recalculate summary dynamically based on the deduplicated list
+      int countP = 0, countA = 0, countR = 0;
+      final List<dynamic> currentTabApps = [];
+
+      for (final app in filteredApps) {
+        final status = app['status'];
+        if (status == 'pending') countP++;
+        else if (status == 'approved') countA++;
+        else if (status == 'rejected') countR++;
+
+        if (status == _currentTab) {
+          currentTabApps.add(app);
+        }
+      }
+
+      _data = {
+        'summary': {'pending': countP, 'approved': countA, 'rejected': countR},
+        'applications': currentTabApps,
+      };
+
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Load Error: $e')));
@@ -48,7 +96,6 @@ class _AdminTrainersPageState extends State<AdminTrainersPage> {
         backgroundColor: approve ? Colors.green : Colors.red,
       ));
       
-      // Refresh the current tab to remove the card we just acted on
       await _load();
     } catch (e) {
       if (!mounted) return;
@@ -66,11 +113,10 @@ class _AdminTrainersPageState extends State<AdminTrainersPage> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-   appBar: AppBar(
+      appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () {
-            // 🔥 FIX: Safely navigate back. If there is no history, force a return to the dashboard.
             if (context.canPop()) {
               context.pop();
             } else {
@@ -78,12 +124,11 @@ class _AdminTrainersPageState extends State<AdminTrainersPage> {
             }
           },
         ),
-        title: const Text('Trainer Applications', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)), // Remember to keep the correct title for each page!
+        title: const Text('Trainer Applications', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
         backgroundColor: AppColors.surface,
       ),
       body: Column(
         children: [
-          // TAB SELECTORS
           Container(
             padding: const EdgeInsets.all(16),
             color: AppColors.surface,
@@ -98,7 +143,6 @@ class _AdminTrainersPageState extends State<AdminTrainersPage> {
             ),
           ),
           
-          // LIST VIEW
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -120,7 +164,6 @@ class _AdminTrainersPageState extends State<AdminTrainersPage> {
     );
   }
 
-  // 🔥 NEW: Interactive Tab Builder
   Widget _buildTab(String label, String count, String tabValue, Color baseColor) {
     final isSelected = _currentTab == tabValue;
     return Expanded(
@@ -128,7 +171,7 @@ class _AdminTrainersPageState extends State<AdminTrainersPage> {
         onTap: () {
           if (_currentTab != tabValue) {
             setState(() => _currentTab = tabValue);
-            _load(); // Reload data for the new tab
+            _load(); 
           }
         },
         child: AnimatedContainer(
@@ -171,7 +214,8 @@ class _AdminTrainersPageState extends State<AdminTrainersPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(app['full_name'] ?? 'Unknown User', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              Text(_formatDate(app['submitted_at']), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+              // 🔥 FIX: Ensures the date renders correctly by checking both keys
+              Text(_formatDate(app['created_at']?.toString() ?? app['submitted_at']?.toString()), style: const TextStyle(color: Colors.grey, fontSize: 12)),
             ],
           ),
           Text(app['email'] ?? 'No email', style: const TextStyle(color: Colors.grey, fontSize: 12)),
@@ -183,7 +227,6 @@ class _AdminTrainersPageState extends State<AdminTrainersPage> {
           ],
           const SizedBox(height: 16),
           
-          // 🔥 NEW: Dynamic buttons based on the current tab
           if (_currentTab == 'pending')
             Row(
               children: [
@@ -208,7 +251,7 @@ class _AdminTrainersPageState extends State<AdminTrainersPage> {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () => _respond(userId, false), // Rejecting an approved user revokes them
+                onPressed: () => _respond(userId, false),
                 icon: const Icon(Icons.cancel, color: Colors.red, size: 18),
                 style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)),
                 label: const Text('Revoke Approval / Reject', style: TextStyle(color: Colors.red)),
@@ -218,7 +261,7 @@ class _AdminTrainersPageState extends State<AdminTrainersPage> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: () => _respond(userId, true), // Approving a rejected user
+                onPressed: () => _respond(userId, true), 
                 icon: const Icon(Icons.check_circle, color: Colors.white, size: 18),
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                 label: const Text('Re-Approve Trainer', style: TextStyle(color: Colors.white)),
