@@ -4,8 +4,18 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../core/di/injection.dart';
 import '../../data/workout_remote_datasource.dart';
 
+// 🔥 Hardcoded CSV Data directly matching your parameters
+const List<Map<String, dynamic>> cardioExercises = [
+  {"name": "Running", "multiplier": 4.8, "image": "assets/images/running.jpg"},
+  {"name": "Burpee", "multiplier": 4.25, "image": "assets/images/burpee.jpg"},
+  {"name": "Lunges", "multiplier": 2.5, "image": "assets/images/lunges.jpg"},
+  {"name": "Push-up", "multiplier": 4.0, "image": "assets/images/push_up.jpg"},
+  {"name": "Plank", "multiplier": 1.75, "image": "assets/images/plank.jpg"},
+];
+
 class CardioTimerPage extends StatefulWidget {
-  const CardioTimerPage({super.key});
+  final double userWeightKg;
+  const CardioTimerPage({super.key, required this.userWeightKg});
 
   @override
   State<CardioTimerPage> createState() => _CardioTimerPageState();
@@ -15,9 +25,15 @@ class _CardioTimerPageState extends State<CardioTimerPage> {
   final _ds = WorkoutRemoteDataSource(sl());
   final Stopwatch _stopwatch = Stopwatch();
   Timer? _timer;
-  String _selectedCardio = "Running";
+  
+  late Map<String, dynamic> _selectedCardio;
+  bool _saving = false;
 
-  String get _img => _selectedCardio.toLowerCase().replaceAll(' ', '_');
+  @override
+  void initState() {
+    super.initState();
+    _selectedCardio = cardioExercises.first;
+  }
 
   void _toggle() {
     setState(() {
@@ -32,15 +48,31 @@ class _CardioTimerPageState extends State<CardioTimerPage> {
   }
 
   Future<void> _finish() async {
+    setState(() => _saving = true);
     try {
-      final session = await _ds.startSession(name: _selectedCardio);
+      final session = await _ds.startSession(name: _selectedCardio['name']);
+      
       final minutes = _stopwatch.elapsed.inMinutes;
-      // Formula: (minutes / 30) * calories_per_kg_30min * weight
-      // (Using 70kg as average fallback here)
-      final calories = (minutes / 30) * 4.8 * 70;
-      await _ds.finishSession(session['session_id'], caloriesBurned: calories);
+      final seconds = _stopwatch.elapsed.inSeconds % 60;
+      final totalMinutesFloat = _stopwatch.elapsed.inSeconds / 60.0;
+      
+      // 🔥 Calculate Calories based on CSV multiplier and exact user weight
+      final double multiplier = _selectedCardio['multiplier'];
+      final calories = (totalMinutesFloat / 30.0) * multiplier * widget.userWeightKg;
+
+      // 🔥 Store the exact stopwatch duration into the notes so history displays it
+      final durationString = "${minutes}m ${seconds}s";
+
+      await _ds.finishSession(
+        session['session_id'], 
+        caloriesBurned: calories,
+        notes: durationString
+      );
+      
       if (mounted) Navigator.pop(context);
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) Navigator.pop(context);
+    }
   }
 
   @override
@@ -53,26 +85,50 @@ class _CardioTimerPageState extends State<CardioTimerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text("Cardio Timer", style: TextStyle(fontWeight: FontWeight.bold))),
-      body: Center(
+      appBar: AppBar(
+        title: const Text("Cardio Timer", style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: AppColors.surface,
+        elevation: 0,
+      ),
+      body: _saving 
+        ? const Center(child: CircularProgressIndicator())
+        : Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: Image.asset(
-                'assets/images/$_img.jpg',
+                _selectedCardio['image'],
                 width: 220,
                 height: 220,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Icon(Icons.directions_run, size: 100, color: AppColors.primary),
+                errorBuilder: (_, __, ___) => Container(
+                  width: 220, height: 220, color: AppColors.surface,
+                  child: const Icon(Icons.directions_run, size: 100, color: AppColors.primary),
+                ),
               ),
             ),
             const SizedBox(height: 24),
-            DropdownButton<String>(
-              value: _selectedCardio,
-              items: ["Running", "Burpee", "Lunges", "Push-up"].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-              onChanged: (v) => setState(() => _selectedCardio = v!),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border)
+              ),
+              child: DropdownButton<Map<String, dynamic>>(
+                value: _selectedCardio,
+                underline: const SizedBox(),
+                items: cardioExercises.map((ex) => DropdownMenuItem(
+                  value: ex, 
+                  child: Text(ex['name'], style: const TextStyle(fontWeight: FontWeight.bold))
+                )).toList(),
+                onChanged: (v) => setState(() {
+                  _selectedCardio = v!;
+                  _stopwatch.reset(); // Reset timer when switching exercise
+                }),
+              ),
             ),
             const SizedBox(height: 40),
             Text(
@@ -86,14 +142,14 @@ class _CardioTimerPageState extends State<CardioTimerPage> {
                 FloatingActionButton.large(
                   onPressed: _toggle,
                   backgroundColor: _stopwatch.isRunning ? Colors.orange : AppColors.primary,
-                  child: Icon(_stopwatch.isRunning ? Icons.pause : Icons.play_arrow),
+                  child: Icon(_stopwatch.isRunning ? Icons.pause : Icons.play_arrow, color: Colors.white),
                 ),
                 if (!_stopwatch.isRunning && _stopwatch.elapsed.inSeconds > 0) ...[
                   const SizedBox(width: 24),
                   FloatingActionButton.large(
                     onPressed: _finish,
                     backgroundColor: Colors.green,
-                    child: const Icon(Icons.check),
+                    child: const Icon(Icons.check, color: Colors.white),
                   ),
                 ]
               ],

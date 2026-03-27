@@ -214,38 +214,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  flutter_background_service:
-    dependency: "direct main"
-    description:
-      name: flutter_background_service
-      sha256: "3824b0ce07a28b1c554494989ef24d196dac1dc6e7dbf5c6e8446da640959626"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.4.1"
-  flutter_background_service_android:
-    dependency: "direct main"
-    description:
-      name: flutter_background_service_android
-      sha256: "4ca694880ad85e915a60a226769946bb878e901cb333782dac1d42906c259481"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.5.4"
-  flutter_background_service_ios:
-    dependency: transitive
-    description:
-      name: flutter_background_service_ios
-      sha256: d3f1dc009137c1ac19f5e3d88668836f088a7e078396733547339765d46ff12f
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.4.0"
-  flutter_background_service_platform_interface:
-    dependency: transitive
-    description:
-      name: flutter_background_service_platform_interface
-      sha256: "5f0480ee8378984f718d640abbe09b4d6d024d58a72b2d8b86bdedb3cf095ff8"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.2.0"
   flutter_bloc:
     dependency: "direct main"
     description:
