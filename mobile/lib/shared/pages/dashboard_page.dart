@@ -624,14 +624,6 @@ class _DashboardBody extends StatelessWidget {
                 const SizedBox(height: 16),
                 _CalorieCard(data: data),
                  const SizedBox(height: 16),
-                 Row(
-                   crossAxisAlignment: CrossAxisAlignment.start,
-                   children: [
-                     Expanded(child: _WaterCard(data: data)),
-                     const SizedBox(width: 16),
-                     Expanded(child: _StatsCard(data: data)),
-                   ],
-                ),
                 _DynamicInsightCard(
                     key: ValueKey('insight_${state.hashCode}'),
                     data: data
@@ -1004,7 +996,7 @@ class _DynamicInsightCardState extends State<_DynamicInsightCard> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Dailyr Insight', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
+              const Text('Daily Insight', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
               Icon(Icons.auto_awesome, color: Colors.purple.shade300, size: 20),
             ],
           ),
@@ -1040,15 +1032,25 @@ class _DynamicInsightCardState extends State<_DynamicInsightCard> {
 
           // The Dynamic Description
           Container(
-            padding: const EdgeInsets.all(16),
+            width: double.infinity, // Forces the container to stretch across the page
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
             decoration: BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.border),
+              // Gives it a beautiful, subtle tint based on the insight's color
+              color: insight.color.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: insight.color.withValues(alpha: 0.15)),
             ),
             child: Text(
-              insight.description,
-              style: const TextStyle(fontSize: 14, height: 1.4),
+              "\"${insight.description}\"", // Adds elegant quote marks
+              textAlign: TextAlign.center, // Centers the text beautifully
+              style: TextStyle(
+                fontSize: 15,
+                height: 1.5, // Better line spacing for readability
+                fontWeight: FontWeight.w500, // Slightly bolder than normal text
+                fontStyle: FontStyle.italic, // Gives it that "insightful" AI quote feel
+                color: AppColors.textPrimary,
+                letterSpacing: 0.3,
+              ),
             ),
           ),
         ],
