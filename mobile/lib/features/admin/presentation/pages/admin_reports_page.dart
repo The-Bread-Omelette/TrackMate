@@ -1,19 +1,25 @@
 import 'package:flutter/material.dart';
-import '../../../../shared/theme/app_theme.dart';
-import '../../data/admin_remote_datasource.dart';
-import '../../../../core/di/injection.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-class AdminReportsPage extends StatefulWidget {
-  const AdminReportsPage({super.key});
+import '../../../../core/di/injection.dart';
+import '../../../../core/router/app_router.dart';
+import '../../../../features/auth/presentation/bloc/auth_bloc.dart';
+import '../../../../features/auth/presentation/bloc/auth_state.dart';
+import '../../../../shared/widgets/main_layout.dart';
+import '../../../../shared/theme/app_theme.dart';
+import '../../data/admin_remote_datasource.dart';
+
+class AdminDashboardPage extends StatefulWidget {
+  const AdminDashboardPage({super.key});
 
   @override
-  State<AdminReportsPage> createState() => _AdminReportsPageState();
+  State<AdminDashboardPage> createState() => _AdminDashboardPageState();
 }
 
-class _AdminReportsPageState extends State<AdminReportsPage> {
+class _AdminDashboardPageState extends State<AdminDashboardPage> {
   final _ds = AdminRemoteDataSource(sl());
-  Map<String, dynamic> _data = {};
+  Map<String, dynamic> _stats = {};
   bool _loading = true;
 
   @override
@@ -26,180 +32,287 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      _data = await _ds.getReports(status: 'pending');
-    } catch (_) {}
-    if (mounted) setState(() => _loading = false);
-  }
-
-  // FIXED: Uses the correct resolveReport method
-  Future<void> _handleAction(String id, {bool dismiss = false}) async {
-    try {
-      await _ds.resolveReport(id, dismiss: dismiss);
+      _stats = await _ds.getStats();
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(dismiss ? 'Report Dismissed' : 'Action Taken & Resolved'),
-          backgroundColor: dismiss ? Colors.grey : AppColors.success,
-        ));
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Stats API Failed 🚨'),
+            content: Text(e.toString()),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
+              )
+            ],
+          ),
+        );
       }
-      await _load();
-    } catch (_) {}
-  }
-
-  // FIXED: Banning is now correctly mapped to user deactivation
-  Future<void> _banUser(String userId) async {
-    try {
-      await _ds.toggleUserStatus(userId, false); // false = deactivate/ban
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('User has been banned (deactivated)'),
-          backgroundColor: Colors.black,
-        ));
-      }
-    } catch (_) {}
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final summary = _data['summary'] as Map<String, dynamic>? ?? {};
-    final reports = _data['reports'] as List? ?? [];
+    // Safely retrieve the user
+    final authState = context.read<AuthBloc>().state;
+    final user = authState is AuthAuthenticatedState ? authState.user : null;
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () {
-            // 🔥 FIX: Safely navigate back. If there is no history, force a return to the dashboard.
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go('/admin/dashboard');
-            }
-          },
-        ),
-        title: const Text('Reports', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)), // Remember to keep the correct title for each page!
-        backgroundColor: AppColors.surface,
-      ),
-      body: _loading
+    // Responsive grid layout: 3 columns on wide screens for the 3 stat cards
+    final screenWidth = MediaQuery.of(context).size.width;
+    final int crossAxisCount = screenWidth > 800 ? 3 : 2;
+
+    return MainLayout(
+      user: user!,
+      title: 'Admin Dashboard',
+      child: _loading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        _SummaryChip('Total', '${summary['total'] ?? 0}', AppColors.primary),
-                        const SizedBox(width: 8),
-                        _SummaryChip('Pending', '${summary['pending'] ?? 0}', Colors.orange),
-                        const SizedBox(width: 8),
-                        _SummaryChip('Resolved', '${summary['resolved'] ?? 0}', AppColors.success),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    if (reports.isEmpty)
-                      const Center(child: Padding(padding: EdgeInsets.all(32), child: Text('No pending reports', style: TextStyle(color: AppColors.textMuted))))
-                    else
-                      ...reports.map((r) {
-                        final report = r as Map<String, dynamic>;
-                        final reporter = report['reporter'] as Map<String, dynamic>? ?? {};
-                        final reported = report['reported_user'] as Map<String, dynamic>? ?? {};
-                        
-                        // Failsafe IDs
-                        final reportId = report['id'] ?? '';
-                        final reportedUserId = reported['id'] ?? '';
+          : Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900), // Optimal width for readability
+          child: RefreshIndicator(
+            onRefresh: _load,
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                const _WelcomeBanner(),
+                const SizedBox(height: 32),
 
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(color: AppColors.error.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                                    child: Text((report['type'] ?? '').toUpperCase(), style: const TextStyle(color: AppColors.error, fontSize: 10, fontWeight: FontWeight.bold)),
-                                  ),
-                                  const Spacer(),
-                                  Text(_formatDate(report['created_at'] ?? ''), style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text('From: ${reporter['full_name'] ?? 'Unknown'}', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                              Text('Target: ${reported['full_name'] ?? 'Unknown'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                              const SizedBox(height: 8),
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(8)),
-                                child: Text(report['body'] ?? 'No report details provided.', style: const TextStyle(fontSize: 13, fontStyle: FontStyle.italic)),
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: ElevatedButton(
-                                      onPressed: () => _handleAction(reportId, dismiss: false),
-                                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.success),
-                                      child: const Text('Resolve', style: TextStyle(color: Colors.white)),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: OutlinedButton(
-                                      onPressed: () => _handleAction(reportId, dismiss: true),
-                                      child: const Text('Dismiss'),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              if (reportedUserId.isNotEmpty)
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: TextButton.icon(
-                                    onPressed: () => _banUser(reportedUserId),
-                                    icon: const Icon(Icons.gavel, color: Colors.black, size: 18),
-                                    label: const Text('Ban Reported User', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                                  ),
-                                )
-                            ],
-                          ),
-                        );
-                      }),
+                // STATS GRID
+                const Text(
+                    "System Overview",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)
+                ),
+                const SizedBox(height: 16),
+                GridView.count(
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: screenWidth > 600 ? 1.6 : 1.4,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _StatCard(
+                      icon: Icons.people_alt_outlined,
+                      iconColor: AppColors.primary,
+                      title: 'Total Users',
+                      value: '${_stats['total_users'] ?? 0}',
+                    ),
+                    _StatCard(
+                      icon: Icons.manage_accounts_outlined,
+                      iconColor: Colors.purple,
+                      title: 'Active Trainers',
+                      value: '${_stats['active_trainers'] ?? 0}',
+                    ),
+                    _StatCard(
+                      icon: Icons.assignment_ind_outlined,
+                      iconColor: Colors.orange,
+                      title: 'Trainer Apps',
+                      value: '${_stats['pending_trainer_applications'] ?? 0}',
+                    ),
                   ],
                 ),
-              ),
-            ),
-    );
-  }
 
-  String _formatDate(String iso) {
-    if (iso.isEmpty) return '';
-    try {
-      final dt = DateTime.parse(iso).toLocal();
-      return '${dt.day}/${dt.month}/${dt.year}';
-    } catch (_) { return ''; }
+                const SizedBox(height: 40),
+
+                // QUICK ACTIONS
+                const Text(
+                    "Quick Actions",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    _QuickActionCard(
+                      icon: Icons.manage_accounts,
+                      label: 'Review Trainer Apps',
+                      color: Colors.orange,
+                      onTap: () {
+                        context.push(AppRouter.adminTrainers).then((_) => _load());
+                      },
+                    ),
+                    const SizedBox(width: 16),
+                    _QuickActionCard(
+                      icon: Icons.group,
+                      label: 'Manage All Users',
+                      color: Colors.green,
+                      onTap: () {
+                        context.push(AppRouter.adminUsers).then((_) => _load());
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 40), // Bottom padding
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
-class _SummaryChip extends StatelessWidget {
-  final String label;
+/// A highly polished gradient welcome banner.
+class _WelcomeBanner extends StatelessWidget {
+  const _WelcomeBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF2563EB).withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: const Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                    'Welcome, Admin',
+                    style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold, letterSpacing: -0.5)
+                ),
+                SizedBox(height: 8),
+                Text(
+                    'Manage users, trainers, and system settings efficiently.',
+                    style: TextStyle(color: Colors.white70, fontSize: 15, height: 1.4)
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.dashboard_customize_rounded, color: Colors.white24, size: 64),
+        ],
+      ),
+    );
+  }
+}
+
+/// A modern stat card with subtle depth.
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
   final String value;
+
+  const _StatCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.value
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border.withOpacity(0.5)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: iconColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: Text(
+                        title,
+                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w500)
+                    )
+                )
+              ]
+          ),
+          const SizedBox(height: 16),
+          Text(
+              value,
+              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: -0.5)
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A clean, tap-friendly quick action button.
+class _QuickActionCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
   final Color color;
-  const _SummaryChip(this.label, this.value, this.color);
+  final VoidCallback onTap;
+
+  const _QuickActionCard({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color = AppColors.primary
+  });
+
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(12), border: Border.all(color: color.withOpacity(0.3))),
-        child: Column(children: [Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)), Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary))]),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          highlightColor: color.withOpacity(0.05),
+          splashColor: color.withOpacity(0.1),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 12),
+            decoration: BoxDecoration(
+                color: color.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: color.withOpacity(0.2))
+            ),
+            child: Column(
+              children: [
+                Icon(icon, color: color, size: 32),
+                const SizedBox(height: 12),
+                Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 14)
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -2,9 +2,26 @@
 
 A fitness tracking platform connecting trainees with trainers, built with Flutter (frontend) and FastAPI (backend).
 
+The production backend API is currently hosted and live on **Render**.
+
+---
+
+## Quick Start (Web)
+
+It is very easy to get TrackMate running in your Chrome browser. Because the backend is already hosted on Render, you don't need to configure any databases or servers to try it out.
+
+Just clone the repository, navigate to the frontend directory, and run it:
+
+```bash
+git clone https://github.com/your-username/trackmate.git
+cd trackmate/mobile
+flutter run -d chrome --web-port 3000
+```
+
 ---
 
 ## Project Structure
+
 ```
 trackmate/
 ├── mobile/          # Flutter app
@@ -52,7 +69,102 @@ trackmate/
 
 ---
 
-## Backend Setup
+## Deploying the Backend to Render
+
+### Prerequisites
+- A [Render](https://render.com) account
+- A PostgreSQL database (Render's managed Postgres or external)
+- A Gmail account with an [App Password](https://support.google.com/accounts/answer/185833) for SMTP
+
+### Step 1 — Create a PostgreSQL Database on Render
+
+1. In the Render dashboard, click **New → PostgreSQL**.
+2. Choose a name (e.g., `trackmate-db`), region, and plan.
+3. Once created, copy the **Internal Database URL** — you'll use this as `DATABASE_URL`.
+
+> **Note:** Use the **Internal URL** (not the External URL) when your backend web service is in the same Render region. It is faster and does not incur egress charges.
+
+### Step 2 — Create a Web Service on Render
+
+1. Click **New → Web Service** and connect your GitHub repository.
+2. Set the **Root Directory** to `backend`.
+3. Configure the build and start commands:
+
+| Setting | Value |
+|---------|-------|
+| **Environment** | Python 3 |
+| **Build Command** | `pip install -r requirements.txt && alembic upgrade head` |
+| **Start Command** | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+
+> Render injects `$PORT` automatically — do **not** hardcode a port number.
+
+### Step 3 — Set Environment Variables
+
+In your web service's **Environment** tab, add the following variables:
+
+```env
+# Database
+DATABASE_URL=<Internal PostgreSQL URL from Step 1 — use postgresql+asyncpg:// scheme>
+
+# JWT
+SECRET_KEY=<a random string, minimum 32 characters>
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=7
+
+# Cookie  ← IMPORTANT for Render (HTTPS in production)
+COOKIE_SECURE=true
+COOKIE_SAMESITE=none
+
+# App
+APP_ENV=production
+APP_HOST=0.0.0.0
+APP_PORT=10000
+CORS_ORIGINS=["https://your-flutter-app-domain.com"]
+
+# Email (Gmail App Password)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@gmail.com
+SMTP_PASSWORD=<your 16-character App Password>
+EMAIL_FROM=you@gmail.com
+EMAIL_FROM_NAME=TrackMate
+FRONTEND_URL=https://your-flutter-app-domain.com
+
+# Admin seed (created on startup if not exists)
+ADMIN_EMAIL=admin@trackmate.com
+ADMIN_PASSWORD=<strong password>
+ADMIN_FULL_NAME=Admin
+```
+
+> ** DATABASE_URL scheme:** Render's connection string uses `postgresql://`. Change the scheme to `postgresql+asyncpg://` so SQLAlchemy's async driver works correctly.
+
+### Step 4 — Deploy
+
+Click **Deploy** (or push to your connected branch). Render will:
+1. Install Python dependencies.
+2. Run `alembic upgrade head` to apply all migrations.
+3. Start the Uvicorn server.
+
+The service URL will be something like `https://trackmate-backend.onrender.com`. API docs are **disabled in production** (`APP_ENV=production`).
+
+### Step 5 — Point the Flutter App at the Render Backend
+
+Update the base URL in your Flutter app's API client (e.g., `lib/core/network/api_client.dart` or your DI setup) to your Render service URL:
+
+```dart
+const String baseUrl = 'https://trackmate-backend.onrender.com';
+```
+
+### Free Tier Considerations
+
+If you are using Render's **free tier**, note that web services spin down after 15 minutes of inactivity and take ~30 seconds to cold-start on the next request. To avoid this during development or demos, consider:
+- Upgrading to a paid instance type, or
+- Using an uptime-monitoring service (e.g., UptimeRobot) to ping the health endpoint periodically.
+
+---
+
+## Backend Local Setup
 
 ### Requirements
 - Python 3.12+

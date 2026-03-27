@@ -199,25 +199,25 @@ class _LoginPageState extends State<LoginPage> {
                               },
                             ),
                             const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: () {},
-                                style: TextButton.styleFrom(
-                                  padding: EdgeInsets.zero,
-                                  minimumSize: const Size(0, 0),
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                child: const Text(
-                                  'Forgot password?',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                              ),
-                            ),
+                            // 8Align(
+                            //   alignment: Alignment.centerRight,
+                            //   child: TextButton(
+                            //     onPressed: () {},
+                            //     style: TextButton.styleFrom(
+                            //       padding: EdgeInsets.zero,
+                            //       minimumSize: const Size(0, 0),
+                            //       tapTargetSize:
+                            //           MaterialTapTargetSize.shrinkWrap,
+                            //     ),
+                            //     // child: const Text(
+                            //     //   'Forgot password?',
+                            //     //   style: TextStyle(
+                            //     //     fontSize: 13,
+                            //     //     color: AppColors.primary,
+                            //     //   ),
+                            //     // ),
+                            //   ),
+                            // ),
                             const SizedBox(height: 20),
                             AnimatedSwitcher(
                               duration: const Duration(milliseconds: 200),

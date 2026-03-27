@@ -54,10 +54,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     final user = (context.read<AuthBloc>().state as AuthAuthenticatedState).user;
 
     // 🔥 FIX: Responsive grid layout so it doesn't stretch wildly
-    int crossAxisCount = MediaQuery.of(context).size.width > 600 ? 4 : 2;
+    int crossAxisCount = MediaQuery.of(context).size.width > 600 ? 3 : 2;
 
     return MainLayout(
-      user: user,
+      user: user!,
       title: 'Admin Dashboard',
       child: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -96,8 +96,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         crossAxisCount: crossAxisCount,
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
-                        childAspectRatio: 1.5, // 🔥 Tighter proportions
-                        shrinkWrap: true,
+                        childAspectRatio: MediaQuery.of(context).size.width > 600 ? 2.0 : 1.5,                        shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         children: [
                           _StatCard(
@@ -111,12 +110,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             iconColor: Colors.purple,
                             title: 'Active Trainers',
                             value: '${_stats['active_trainers'] ?? 0}',
-                          ),
-                          _StatCard(
-                            icon: Icons.warning_amber_rounded,
-                            iconColor: Colors.red,
-                            title: 'Pending Reports',
-                            value: '${_stats['pending_reports'] ?? 0}',
                           ),
                           _StatCard(
                             icon: Icons.assignment_ind_outlined,
@@ -140,15 +133,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             color: Colors.orange,
                             onTap: () {
                               context.push(AppRouter.adminTrainers).then((_) => _load());
-                            },
-                          ),
-                          const SizedBox(width: 12),
-                          _QuickActionCard(
-                            icon: Icons.warning_amber_rounded,
-                            label: 'Reports',
-                            color: AppColors.error,
-                            onTap: () {
-                              context.push(AppRouter.adminReports).then((_) => _load());
                             },
                           ),
                           const SizedBox(width: 12),
