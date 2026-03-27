@@ -1,3 +1,15 @@
+# Pre-built APK
+
+The ready-to-install Android APK is available at:
+
+```
+/build/app/outputs/flutter-apk/
+```
+
+Download `app-release.apk` from that folder and install it directly on your Android device — no build step required.
+
+---
+
 # TrackMate
 
 A fitness tracking platform connecting trainees with trainers, built with Flutter (frontend) and FastAPI (backend).
@@ -137,7 +149,9 @@ ADMIN_PASSWORD=<strong password>
 ADMIN_FULL_NAME=Admin
 ```
 
-> ** DATABASE_URL scheme:** Render's connection string uses `postgresql://`. Change the scheme to `postgresql+asyncpg://` so SQLAlchemy's async driver works correctly.
+> **⚠️ Cookie settings:** Render serves all web services over HTTPS. You **must** set `COOKIE_SECURE=true` and `COOKIE_SAMESITE=none` in production so that cross-origin cookies (Flutter web ↔ Render API) are accepted by the browser.
+
+> **⚠️ DATABASE_URL scheme:** Render's connection string uses `postgresql://`. Change the scheme to `postgresql+asyncpg://` so SQLAlchemy's async driver works correctly.
 
 ### Step 4 — Deploy
 
