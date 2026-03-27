@@ -33,7 +33,11 @@ class EmailService:
             self.creds = Credentials.from_authorized_user_file('token.json', self.scopes)
             print("[Email] Loaded Google credentials from local token.json file.")
             
-        # 3. Handle token refresh if it has expired
+        # 3. Handle initial token refresh if it has already expired on boot
+        self._refresh_if_needed()
+
+    def _refresh_if_needed(self):
+        """Checks if the current access token is expired and refreshes it if a refresh token is available."""
         if self.creds and not self.creds.valid:
             if self.creds.expired and self.creds.refresh_token:
                 try:
@@ -55,6 +59,9 @@ class EmailService:
         if not settings.email_enabled:
             print(f"[Email disabled] To: {to} | Subject: {subject}")
             return
+
+        # Ensure the token is refreshed right before we attempt to send
+        self._refresh_if_needed()
 
         if not self.creds or not self.creds.valid:
             print(f"[Email] Auth failed. Skipping email to {to}")
