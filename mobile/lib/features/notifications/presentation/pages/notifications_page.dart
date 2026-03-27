@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // 🔥 ADDED: For reading preferences
 import '../../../../core/di/injection.dart';
 import '../../../../features/auth/presentation/bloc/auth_bloc.dart';
 import '../../../../features/auth/presentation/bloc/auth_state.dart';
@@ -8,7 +9,6 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../data/notifications_remote_datasource.dart';
 import 'package:go_router/go_router.dart';
 
-// 🔥 ADDED: Imports required for the Coaching Hub routing
 import '../../../trainer/data/trainer_remote_datasource.dart';
 import '../../../trainer/presentation/pages/coaching_hub_page.dart';
 
@@ -25,18 +25,67 @@ class _NotificationsPageState extends State<NotificationsPage> {
   int _unreadCount = 0;
   bool _loading = true;
 
+  // 🔥 ADDED: State to hold user preferences
+  Map<String, bool> _prefs = {
+    'friend_request': true,
+    'trainer_request': true,
+    'new_message': true,
+    'post_like': true,
+    'system': true,
+  };
+
   @override
   void initState() {
     super.initState();
-    _load();
+    _initLoad(); // Load prefs first, then load notifications
   }
 
-  // 🔥 UPDATED: Smart routing logic that safely checks the user role
+  // 🔥 ADDED: Fetch preferences before loading notifications
+  Future<void> _initLoad() async {
+    await _loadPrefs();
+    await _load();
+  }
+
+  // 🔥 ADDED: Read preferences from SharedPreferences
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _prefs['friend_request'] = prefs.getBool('notif_friend_request') ?? true;
+      _prefs['trainer_request'] = prefs.getBool('notif_trainer_request') ?? true;
+      _prefs['new_message'] = prefs.getBool('notif_new_message') ?? true;
+      _prefs['post_like'] = prefs.getBool('notif_post_like') ?? true;
+      _prefs['system'] = prefs.getBool('notif_system') ?? true;
+    });
+  }
+
+  // 🔥 ADDED: Helper to map backend notification types to preference keys
+  bool _isNotificationEnabled(String type) {
+    switch (type) {
+      case 'friend_request':
+      case 'friend_accepted':
+        return _prefs['friend_request'] ?? true;
+      case 'trainer_request':
+      case 'trainer_accepted':
+      case 'trainer_rejected':
+      case 'trainer_approved':
+        return _prefs['trainer_request'] ?? true;
+      case 'new_message':
+        return _prefs['new_message'] ?? true;
+      case 'post_like':
+        return _prefs['post_like'] ?? true;
+      case 'system':
+        return _prefs['system'] ?? true;
+      default:
+        return true; // Show unknown types by default just in case
+    }
+  }
+
   void _routeNotification(BuildContext context, Map<String, dynamic> n, dynamic user) async {
     final type = n['type']?.toString().trim() ?? '';
     final isTrainee = user.role.toString().toLowerCase().contains('trainee');
 
     switch (type) {
+      case 'post_like':
       case 'friend_request':
       case 'friend_accepted':
         context.go('/social');
@@ -53,7 +102,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'trainer_accepted':
       case 'trainer_approved':
         if (isTrainee) {
-          // Show a quick loader while we fetch their current trainer
           showDialog(
             context: context,
             barrierDismissible: false,
@@ -64,10 +112,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
             final trainerDs = sl<TrainerRemoteDataSource>();
             final trainer = await trainerDs.getMyTrainer();
 
-            if (context.mounted) Navigator.pop(context); // Close loading dialog
+            if (context.mounted) Navigator.pop(context);
 
             if (trainer != null) {
-              // Check if notification is from current trainer (using fallback keys)
               final senderId = n['actor_id'] ?? n['sender_id'] ?? n['related_id'];
 
               if (senderId == null || trainer['id'] == senderId) {
@@ -77,7 +124,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   ));
                 }
               } else {
-                // It's from an old trainer -> Do nothing except notify them
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('This is an old notification for a past trainer.')),
@@ -85,7 +131,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 }
               }
             } else {
-              // No active trainer -> Do nothing except notify them
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('You do not have an active trainer right now.')),
@@ -93,10 +138,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
               }
             }
           } catch (_) {
-            if (context.mounted) Navigator.pop(context); // Close dialog on error
+            if (context.mounted) Navigator.pop(context);
           }
         } else {
-          // If the user is a trainer, keep old functionality
           context.go('/trainer/requests');
         }
         break;
@@ -109,10 +153,20 @@ class _NotificationsPageState extends State<NotificationsPage> {
     setState(() => _loading = true);
     try {
       final data = await _ds.getNotifications();
+      final allNotifications = (data['notifications'] as List?) ?? [];
+
+      // 🔥 UPDATED: Filter notifications based on preferences
+      final filteredNotifications = allNotifications.where((n) {
+        final type = (n as Map<String, dynamic>)['type'] as String? ?? '';
+        return _isNotificationEnabled(type);
+      }).toList();
+
+      // Recalculate unread count based only on visible notifications
+      final visibleUnreadCount = filteredNotifications.where((n) => n['is_read'] != true).length;
+
       setState(() {
-        _notifications =
-            (data['notifications'] as List?) ?? [];
-        _unreadCount = (data['unread_count'] as num?)?.toInt() ?? 0;
+        _notifications = filteredNotifications;
+        _unreadCount = visibleUnreadCount;
       });
     } catch (_) {}
     setState(() => _loading = false);
@@ -165,7 +219,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
       child: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: () async {
+          await _loadPrefs(); // Reload prefs on pull-to-refresh just in case
+          await _load();
+        },
         child: Column(
           children: [
             if (_unreadCount > 0)
@@ -220,8 +277,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
                     },
                     child: InkWell(
                       onTap: () {
-                        if (!isRead) _ds.markRead(n['id']).then((_) => _load());
-                        // 🔥 UPDATED: Pass the user object so routing works safely
+                        if (!isRead) {
+                          _ds.markRead(n['id']).then((_) => _load());
+                        }
                         _routeNotification(context, n, user);
                       },
                       borderRadius: BorderRadius.circular(12),

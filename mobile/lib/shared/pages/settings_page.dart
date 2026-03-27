@@ -184,7 +184,7 @@ class _SettingsPageState extends State<SettingsPage> {
   // 🔥 View and Withdraw existing application
   void _showApplicationDetails(BuildContext context) {
     if (_savedApplication == null) return;
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -223,7 +223,7 @@ class _SettingsPageState extends State<SettingsPage> {
             const SizedBox(height: 4),
             Text(_savedApplication!['certifications'], style: const TextStyle(fontWeight: FontWeight.w500)),
             const SizedBox(height: 32),
-            
+
             SizedBox(
               width: double.infinity,
               height: 50,
@@ -269,7 +269,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     List<String> specializations = [];
     List<String> certifications = [];
-    
+
     final formKey = GlobalKey<FormState>();
     bool autoValidate = false;
 
@@ -278,184 +278,184 @@ class _SettingsPageState extends State<SettingsPage> {
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
-        builder: (BuildContext context, StateSetter setModalState) {
-          
-          Widget buildTags(List<String> tags, Function(String) onDeleted) {
-            return Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: tags.map((tag) => Chip(
-                label: Text(tag, style: const TextStyle(fontSize: 12)),
-                backgroundColor: AppColors.primary.withOpacity(0.1),
-                deleteIcon: const Icon(Icons.close, size: 16),
-                onDeleted: () => setModalState(() => onDeleted(tag)),
-              )).toList(),
-            );
-          }
+          builder: (BuildContext context, StateSetter setModalState) {
 
-          return Padding(
-            padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
-            child: Form(
-              key: formKey,
-              autovalidateMode: autoValidate ? AutovalidateMode.onUserInteraction : AutovalidateMode.disabled,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Trainer Application', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    const Text('All fields are mandatory.', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-                    const SizedBox(height: 16),
+            Widget buildTags(List<String> tags, Function(String) onDeleted) {
+              return Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: tags.map((tag) => Chip(
+                  label: Text(tag, style: const TextStyle(fontSize: 12)),
+                  backgroundColor: AppColors.primary.withOpacity(0.1),
+                  deleteIcon: const Icon(Icons.close, size: 16),
+                  onDeleted: () => setModalState(() => onDeleted(tag)),
+                )).toList(),
+              );
+            }
 
-                    TextFormField(
-                      controller: phoneCtrl,
-                      keyboardType: TextInputType.phone,
-                      maxLength: 10,
-                      decoration: const InputDecoration(
-                        labelText: 'Phone Number',
-                        prefixText: '+91 ',
-                        prefixStyle: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold),
-                        counterText: '',
+            return Padding(
+              padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+              child: Form(
+                key: formKey,
+                autovalidateMode: autoValidate ? AutovalidateMode.onUserInteraction : AutovalidateMode.disabled,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Trainer Application', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      const Text('All fields are mandatory.', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                      const SizedBox(height: 16),
+
+                      TextFormField(
+                        controller: phoneCtrl,
+                        keyboardType: TextInputType.phone,
+                        maxLength: 10,
+                        decoration: const InputDecoration(
+                          labelText: 'Phone Number',
+                          prefixText: '+91 ',
+                          prefixStyle: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold),
+                          counterText: '',
+                        ),
+                        validator: (val) => (val == null || val.length != 10 || !RegExp(r'^[0-9]+$').hasMatch(val))
+                            ? 'Enter a valid 10-digit number' : null,
                       ),
-                      validator: (val) => (val == null || val.length != 10 || !RegExp(r'^[0-9]+$').hasMatch(val)) 
-                          ? 'Enter a valid 10-digit number' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    TextFormField(
-                      controller: expCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: false),
-                      decoration: const InputDecoration(labelText: 'Years of Experience'),
-                      validator: (val) => int.tryParse(val?.trim() ?? '') == null ? 'Must be a valid number' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    TextFormField(
-                      controller: aboutCtrl,
-                      maxLines: 3,
-                      decoration: const InputDecoration(labelText: 'About Me (No limits)', alignLabelWithHint: true),
-                      validator: (val) => (val == null || val.trim().isEmpty) ? 'Please write a short bio' : null,
-                    ),
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 16),
 
-                    if (specializations.isNotEmpty) buildTags(specializations, (tag) => specializations.remove(tag)),
-                    TextFormField(
-                      controller: specCtrl,
-                      decoration: const InputDecoration(labelText: 'Specializations (Type comma "," to add)'),
-                      onChanged: (val) {
-                        if (val.endsWith(',')) {
-                          final tag = val.substring(0, val.length - 1).trim();
-                          if (tag.isNotEmpty && !specializations.contains(tag)) {
-                            setModalState(() { specializations.add(tag); specCtrl.clear(); });
-                          } else {
-                            specCtrl.clear();
-                          }
-                        }
-                      },
-                    ),
-                    if (autoValidate && specializations.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 4, left: 12),
-                        child: Text('Add at least one specialization', style: TextStyle(color: AppColors.error, fontSize: 12)),
+                      TextFormField(
+                        controller: expCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: false),
+                        decoration: const InputDecoration(labelText: 'Years of Experience'),
+                        validator: (val) => int.tryParse(val?.trim() ?? '') == null ? 'Must be a valid number' : null,
                       ),
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 16),
 
-                    if (certifications.isNotEmpty) buildTags(certifications, (tag) => certifications.remove(tag)),
-                    TextFormField(
-                      controller: certCtrl,
-                      decoration: const InputDecoration(labelText: 'Certifications (Type comma "," to add)'),
-                      onChanged: (val) {
-                        if (val.endsWith(',')) {
-                          final tag = val.substring(0, val.length - 1).trim();
-                          if (tag.isNotEmpty && !certifications.contains(tag)) {
-                            setModalState(() { certifications.add(tag); certCtrl.clear(); });
-                          } else {
-                            certCtrl.clear();
-                          }
-                        }
-                      },
-                    ),
-                    if (autoValidate && certifications.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 4, left: 12),
-                        child: Text('Add at least one certification', style: TextStyle(color: AppColors.error, fontSize: 12)),
+                      TextFormField(
+                        controller: aboutCtrl,
+                        maxLines: 3,
+                        decoration: const InputDecoration(labelText: 'About Me (No limits)', alignLabelWithHint: true),
+                        validator: (val) => (val == null || val.trim().isEmpty) ? 'Please write a short bio' : null,
                       ),
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 16),
 
-                    TextFormField(
-                      controller: rateCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(labelText: 'Hourly Rate (₹)', prefixText: '₹ '),
-                      validator: (val) => double.tryParse(val?.trim() ?? '') == null ? 'Must be a valid number' : null,
-                    ),
-                    const SizedBox(height: 24),
-
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          if (specCtrl.text.trim().isNotEmpty) {
-                            if (!specializations.contains(specCtrl.text.trim())) specializations.add(specCtrl.text.trim());
-                            specCtrl.clear();
-                          }
-                          if (certCtrl.text.trim().isNotEmpty) {
-                            if (!certifications.contains(certCtrl.text.trim())) certifications.add(certCtrl.text.trim());
-                            certCtrl.clear();
-                          }
-
-                          if (!formKey.currentState!.validate() || specializations.isEmpty || certifications.isEmpty) {
-                            setModalState(() { autoValidate = true; }); 
-                            return; 
-                          }
-
-                          Navigator.pop(ctx); 
-                          
-                          final payload = {
-                            'phone_number': '+91${phoneCtrl.text.trim()}',
-                            'experience_years': int.tryParse(expCtrl.text.trim()),
-                            'about': aboutCtrl.text.trim(),
-                            'specializations': specializations.join(', '),
-                            'certifications': certifications.join(', '),
-                            'hourly_rate': double.tryParse(rateCtrl.text.trim()),
-                          };
-
-                          try {
-                            await _dio.post(ApiConstants.trainerApply, data: payload);
-                            
-                            final prefs = await SharedPreferences.getInstance();
-                            await prefs.setString('trainer_application', jsonEncode(payload));
-                            
-                            setState(() { _savedApplication = payload; });
-
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Application submitted! Admin will review it.')));
-                            }
-                          } on DioException catch (e) {
-                            if (e.response?.statusCode == 409) {
-                              final prefs = await SharedPreferences.getInstance();
-                              await prefs.setString('trainer_application', jsonEncode(payload));
-                              setState(() { _savedApplication = payload; });
-
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                                  content: Text('You already have a pending application! View it below.'),
-                                  backgroundColor: Colors.orange,
-                                ));
-                              }
+                      if (specializations.isNotEmpty) buildTags(specializations, (tag) => specializations.remove(tag)),
+                      TextFormField(
+                        controller: specCtrl,
+                        decoration: const InputDecoration(labelText: 'Specializations (Type comma "," to add)'),
+                        onChanged: (val) {
+                          if (val.endsWith(',')) {
+                            final tag = val.substring(0, val.length - 1).trim();
+                            if (tag.isNotEmpty && !specializations.contains(tag)) {
+                              setModalState(() { specializations.add(tag); specCtrl.clear(); });
+                            } else {
+                              specCtrl.clear();
                             }
                           }
                         },
-                        child: const Text('Submit Application', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
-                    ),
-                  ],
+                      if (autoValidate && specializations.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 4, left: 12),
+                          child: Text('Add at least one specialization', style: TextStyle(color: AppColors.error, fontSize: 12)),
+                        ),
+                      const SizedBox(height: 16),
+
+                      if (certifications.isNotEmpty) buildTags(certifications, (tag) => certifications.remove(tag)),
+                      TextFormField(
+                        controller: certCtrl,
+                        decoration: const InputDecoration(labelText: 'Certifications (Type comma "," to add)'),
+                        onChanged: (val) {
+                          if (val.endsWith(',')) {
+                            final tag = val.substring(0, val.length - 1).trim();
+                            if (tag.isNotEmpty && !certifications.contains(tag)) {
+                              setModalState(() { certifications.add(tag); certCtrl.clear(); });
+                            } else {
+                              certCtrl.clear();
+                            }
+                          }
+                        },
+                      ),
+                      if (autoValidate && certifications.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 4, left: 12),
+                          child: Text('Add at least one certification', style: TextStyle(color: AppColors.error, fontSize: 12)),
+                        ),
+                      const SizedBox(height: 16),
+
+                      TextFormField(
+                        controller: rateCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(labelText: 'Hourly Rate (₹)', prefixText: '₹ '),
+                        validator: (val) => double.tryParse(val?.trim() ?? '') == null ? 'Must be a valid number' : null,
+                      ),
+                      const SizedBox(height: 24),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            if (specCtrl.text.trim().isNotEmpty) {
+                              if (!specializations.contains(specCtrl.text.trim())) specializations.add(specCtrl.text.trim());
+                              specCtrl.clear();
+                            }
+                            if (certCtrl.text.trim().isNotEmpty) {
+                              if (!certifications.contains(certCtrl.text.trim())) certifications.add(certCtrl.text.trim());
+                              certCtrl.clear();
+                            }
+
+                            if (!formKey.currentState!.validate() || specializations.isEmpty || certifications.isEmpty) {
+                              setModalState(() { autoValidate = true; });
+                              return;
+                            }
+
+                            Navigator.pop(ctx);
+
+                            final payload = {
+                              'phone_number': '+91${phoneCtrl.text.trim()}',
+                              'experience_years': int.tryParse(expCtrl.text.trim()),
+                              'about': aboutCtrl.text.trim(),
+                              'specializations': specializations.join(', '),
+                              'certifications': certifications.join(', '),
+                              'hourly_rate': double.tryParse(rateCtrl.text.trim()),
+                            };
+
+                            try {
+                              await _dio.post(ApiConstants.trainerApply, data: payload);
+
+                              final prefs = await SharedPreferences.getInstance();
+                              await prefs.setString('trainer_application', jsonEncode(payload));
+
+                              setState(() { _savedApplication = payload; });
+
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Application submitted! Admin will review it.')));
+                              }
+                            } on DioException catch (e) {
+                              if (e.response?.statusCode == 409) {
+                                final prefs = await SharedPreferences.getInstance();
+                                await prefs.setString('trainer_application', jsonEncode(payload));
+                                setState(() { _savedApplication = payload; });
+
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                    content: Text('You already have a pending application! View it below.'),
+                                    backgroundColor: Colors.orange,
+                                  ));
+                                }
+                              }
+                            }
+                          },
+                          child: const Text('Submit Application', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        }
+            );
+          }
       ),
     );
   }
@@ -463,6 +463,9 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final user = (context.read<AuthBloc>().state as AuthAuthenticatedState).user;
+
+    // 🔥 Determine role to conditionally render UI blocks
+    final bool isTrainer = user.role.name == 'trainer';
 
     return MainLayout(
       user: user,
@@ -490,14 +493,17 @@ class _SettingsPageState extends State<SettingsPage> {
             ]),
             const SizedBox(height: 20),
 
-            _header('Body Metrics'),
-            _card([
-              Row(children: [
-                Expanded(child: _inputTile('Height (cm)', _heightCtrl, isNumber: true)),
-                Expanded(child: _inputTile('Weight (kg)', _weightCtrl, isNumber: true)),
+            // 🔥 Hide Body Metrics if user is a Trainer
+            if (!isTrainer) ...[
+              _header('Body Metrics'),
+              _card([
+                Row(children: [
+                  Expanded(child: _inputTile('Height (cm)', _heightCtrl, isNumber: true)),
+                  Expanded(child: _inputTile('Weight (kg)', _weightCtrl, isNumber: true)),
+                ]),
               ]),
-            ]),
-            const SizedBox(height: 20),
+              const SizedBox(height: 20),
+            ],
 
             _header('Notification Preferences'),
             _card(_notifPrefs.entries.map((e) => SwitchListTile(
@@ -512,16 +518,19 @@ class _SettingsPageState extends State<SettingsPage> {
             )).toList()),
             const SizedBox(height: 20),
 
-            _header('Fitness Goals'),
-            _card([
-              Row(children: [
-                Expanded(child: _inputTile('Step Goal', _stepGoalCtrl, isNumber: true)),
-                Expanded(child: _inputTile('Calorie Goal', _calorieGoalCtrl, isNumber: true)),
+            // 🔥 Hide Fitness Goals if user is a Trainer
+            if (!isTrainer) ...[
+              _header('Fitness Goals'),
+              _card([
+                Row(children: [
+                  Expanded(child: _inputTile('Step Goal', _stepGoalCtrl, isNumber: true)),
+                  Expanded(child: _inputTile('Calorie Goal', _calorieGoalCtrl, isNumber: true)),
+                ]),
+                _inputTile('Water Goal (ml)', _waterGoalCtrl, isNumber: true),
+                _dropdownTile('Activity Level', _activityLevel, _activityLevels, (v) => setState(() => _activityLevel = v)),
               ]),
-              _inputTile('Water Goal (ml)', _waterGoalCtrl, isNumber: true),
-              _dropdownTile('Activity Level', _activityLevel, _activityLevels, (v) => setState(() => _activityLevel = v)),
-            ]),
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
+            ],
 
             SizedBox(
               width: double.infinity,
@@ -534,6 +543,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
 
+            // 🔥 Keep Trainer Center strictly for Trainees
             if (user.role.name == 'trainee') ...[
               const SizedBox(height: 20),
               _header('Trainer Center'),

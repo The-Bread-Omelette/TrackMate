@@ -109,8 +109,7 @@ class _AppDrawer extends StatelessWidget {
 
           if (isTrainer) ...[
             _tile(context, Icons.people, 'My Students', '/trainer/students'),
-            _tile(context, Icons.calendar_today, 'Calendar', '/trainer/calendar'),
-            _tile(context, Icons.inbox, 'Requests', '/trainer/requests'),
+            _tile(context, Icons.inbox, 'Requests & Calendar', '/trainer/requests'),
             _tile(context, Icons.people, 'Social', '/social'),
             _tile(context, Icons.message, 'Messages', '/messages'),
             _tile(context, Icons.notifications, 'Notifications', AppRouter.notifications),
