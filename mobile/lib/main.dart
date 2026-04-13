@@ -8,12 +8,11 @@ import 'features/auth/presentation/bloc/auth_event.dart';
 import 'shared/theme/app_theme.dart';
 import 'features/fitness/services/pedometer_service.dart';
 
-// 🔥 Initialize pedometer globally
 final globalPedometer = PedometerService();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  setupDependencies();
+  await setupDependencies();
   runApp(const TrackMateApp());
 }
 
@@ -35,14 +34,13 @@ class _TrackMateAppState extends State<TrackMateApp> {
     router = AppRouter.create(_authBloc);
     _authBloc.add(const AuthCheckSessionEvent());
 
-    // 🔥 Start silent step tracking immediately when app boots
     globalPedometer.start();
   }
 
   @override
   void dispose() {
     _authBloc.close();
-    globalPedometer.dispose(); // 🔥 Clean up when app closes
+    globalPedometer.dispose();
     super.dispose();
   }
 

@@ -12,7 +12,7 @@ abstract class AuthRemoteDataSource {
     required bool applyAsTrainer,
   });
 
-  Future<AuthResponseModel> login({
+  Future<UserModel> login({
     required String email,
     required String password,
   });
@@ -21,9 +21,16 @@ abstract class AuthRemoteDataSource {
 
   Future<UserModel> getCurrentUser();  // ADD THIS
 
-  Future<AuthResponseModel> verifyEmail({required String email, required String otp});
+  Future<UserModel> verifyEmail({required String email, required String otp});
 
   Future<void> resendVerification({required String email});
+  Future<void> forgotPassword(String email);
+  
+  Future<void> resetPassword({
+    required String email,
+    required String otp,
+    required String newPassword,
+  });
 }
 
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
@@ -52,20 +59,20 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   }
 
   @override
-  Future<AuthResponseModel> login({
-    required String email,
-    required String password
-  }) async {
-    try {
-      final response = await dio.post(ApiConstants.login, data: {
-        'email': email,
-        'password': password
-      });
-      return AuthResponseModel.fromJson(response.data as Map<String, dynamic>);
-    } on DioException catch (e) {
-      throw mapDioError(e);
+    Future<UserModel> login({
+      required String email,
+      required String password
+    }) async {
+      try {
+        final response = await dio.post(ApiConstants.login, data: {
+          'email': email,
+          'password': password
+        });
+        return UserModel.fromJson(response.data as Map<String, dynamic>);
+      } on DioException catch (e) {
+        throw mapDioError(e);
+      }
     }
-  }
 
   @override
   Future<void> logout() async {
@@ -96,18 +103,43 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     }
   }
 
+  @override
+    Future<UserModel> verifyEmail({
+      required String email,
+      required String otp,
+    }) async {
+      try {
+        final response = await dio.post(ApiConstants.verifyEmail, data: {
+          'email': email,
+          'otp': otp,
+        });
+
+        return UserModel.fromJson(response.data as Map<String, dynamic>);
+      } on DioException catch (e) {
+        throw mapDioError(e);
+      }
+    }
+  @override
+  Future<void> forgotPassword(String email) async {
+    try {
+      await dio.post('/api/v1/auth/forgot-password', data: {'email': email});
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
 
   @override
-  Future<AuthResponseModel> verifyEmail({
+  Future<void> resetPassword({
     required String email,
     required String otp,
+    required String newPassword,
   }) async {
     try {
-      final response = await dio.post(ApiConstants.verifyEmail, data: {
+      await dio.post('/api/v1/auth/reset-password', data: {
         'email': email,
         'otp': otp,
+        'new_password': newPassword,
       });
-      return AuthResponseModel.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw mapDioError(e);
     }

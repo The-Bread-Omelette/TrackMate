@@ -8,6 +8,8 @@ import '../../features/auth/presentation/bloc/auth_event.dart';
 import '../../features/auth/presentation/pages/login_page.dart';
 import '../../features/auth/presentation/pages/register_page.dart';
 import '../../features/auth/presentation/pages/check_email_page.dart';
+import '../../features/auth/presentation/pages/forgot_password_page.dart';
+import '../../features/auth/presentation/pages/reset_password_page.dart';
 import '../../features/auth/domain/entities/user_entity.dart';
 import '../../shared/pages/dashboard_page.dart';
 import '../../shared/pages/settings_page.dart';
@@ -32,6 +34,9 @@ class AppRouter {
   static const String login = '/login';
   static const String register = '/register';
   static const String checkEmail = '/check-email';
+  static const String forgotPassword = '/forgot-password';
+  static const String resetPassword = '/reset-password';
+  
   static const String dashboard = '/dashboard';
   static const String settings = '/settings';
   static const String trainerStudents = '/trainer/students';
@@ -49,7 +54,7 @@ class AppRouter {
   static const String calendar = '/calendar';
   static const String onboarding = '/onboarding';
   static const String trainerCalendar = '/trainer/calendar';
-  static const String coachingHub = '/coaching-hub'; // <-- ADD THIS LINE
+  static const String coachingHub = '/coaching-hub';
 
   static GoRouter create(AuthBloc authBloc) {
     return GoRouter(
@@ -59,17 +64,25 @@ class AppRouter {
         final authState = authBloc.state;
         final loc = state.matchedLocation;
 
-        final isAuthRoute = loc == login || loc == register;
+        final isAuthRoute = loc == login || loc == register || loc == forgotPassword || loc == resetPassword;
         final isCheckEmailRoute = loc == checkEmail;
 
         if (authState is AuthLoadingState || authState is AuthInitialState) return null;
-        if (authState is AuthUnauthenticatedState) return isAuthRoute ? null : login;
+        
+        if (authState is AuthUnauthenticatedState || authState is AuthErrorState) return isAuthRoute ? null : login;
         
         if (authState is AuthRegisteredState) {
           return isCheckEmailRoute ? null : '$checkEmail?email=${Uri.encodeComponent(authState.email)}';
         }
         if (authState is AuthUnverifiedState) {
           return isCheckEmailRoute ? null : '$checkEmail?email=${Uri.encodeComponent(authState.email)}';
+        }
+        
+        if (authState is AuthPasswordResetEmailSentState) {
+          return loc == resetPassword ? null : '$resetPassword?email=${Uri.encodeComponent(authState.email)}';
+        }
+        if (authState is AuthPasswordResetSuccessState) {
+          return login;
         }
         
         if (authState is AuthOnboardingState) return loc == onboarding ? null : onboarding;
@@ -104,6 +117,15 @@ class AppRouter {
           ),
         ),
         
+        GoRoute(
+          path: forgotPassword,
+          builder: (context, _) => const ForgotPasswordPage(),
+        ),
+        GoRoute(
+          path: resetPassword,
+          builder: (context, state) => ResetPasswordPage(email: state.uri.queryParameters['email'] ?? ''),
+        ),
+        
         // Core User Routes
         GoRoute(path: dashboard, builder: (_, __) => const DashboardPage()),
         GoRoute(path: settings, builder: (_, __) => const SettingsPage()),
@@ -115,7 +137,7 @@ class AppRouter {
         GoRoute(path: messages, builder: (_, __) => const ConversationsPage()),
         GoRoute(path: calendar, builder: (_, __) => const CalendarPage()),
         
-        // 🔥 Trainer Routes (FIXED: Now pointing to their actual pages)
+        // Trainer Routes
         GoRoute(path: trainerStudents, builder: (_, __) => const TrainerStudentsPage()), 
         GoRoute(path: trainerRequests, builder: (_, __) => const TrainerRequestsPage()),
         GoRoute(path: trainerCalendar, builder: (_, __) => const CalendarPage()), 
@@ -123,10 +145,7 @@ class AppRouter {
         GoRoute(
             path: coachingHub,
             builder: (context, state) {
-              // 1. Grab the data passed during navigation (default to empty map if null)
               final extraData = state.extra as Map<String, dynamic>? ?? {};
-
-              // 2. Pass it into your page (Notice we removed 'const' here!)
               return CoachingHubPage(trainerInfo: extraData);
             }
         ),
@@ -141,7 +160,7 @@ class AppRouter {
   static String _homeForRole(UserRole role) {
     switch (role) {
       case UserRole.admin: return adminDashboard;
-      case UserRole.trainer: return trainerStudents; // This will now properly route to TrainerStudentsPage
+      case UserRole.trainer: return trainerStudents; 
       case UserRole.trainee: return dashboard;
     }
   }

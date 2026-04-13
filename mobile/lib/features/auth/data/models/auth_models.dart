@@ -1,21 +1,3 @@
-class TokenModel {
-  final String accessToken;
-  final String refreshToken;
-  final String tokenType;
-
-  const TokenModel({
-    required this.accessToken,
-    required this.refreshToken,
-    this.tokenType = 'bearer',
-  });
-
-  factory TokenModel.fromJson(Map<String, dynamic> json) => TokenModel(
-        accessToken: json['access_token'] as String,
-        refreshToken: json['refresh_token'] as String,
-        tokenType: json['token_type'] as String? ?? 'bearer',
-      );
-}
-
 class UserModel {
   final String id;
   final String email;
@@ -43,18 +25,6 @@ class UserModel {
       );
 }
 
-class AuthResponseModel {
-  final UserModel user;
-  final TokenModel tokens;
-
-  const AuthResponseModel({required this.user, required this.tokens});
-
-  factory AuthResponseModel.fromJson(Map<String, dynamic> json) =>
-      AuthResponseModel(
-        user: UserModel.fromJson(json['user'] as Map<String, dynamic>),
-        tokens: TokenModel.fromJson(json['tokens'] as Map<String, dynamic>),
-      );
-}
 
 class RegisterResponseModel {
   final String message;

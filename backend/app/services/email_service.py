@@ -119,5 +119,16 @@ class EmailService:
         <p>— TrackMate</p>
         """
         self._send(to, "Your trainer application was not approved", html)
+        
+    def send_password_reset_email(self, email: str, name: str, otp: str):
+        html = f"""
+        <p>Hi {name},</p>
+        <p>You requested a password reset. Your OTP is:</p>
+        <h2 style="letter-spacing: 8px; font-size: 32px; color: #2563EB;">{otp}</h2>
+        <p>This OTP will expire in 10 minutes.</p>
+        <p>If you did not request this, please ignore this email.</p>
+        <p>— TrackMate</p>
+        """
+        self._send(email, "Password Reset Request", html)
 
 email_service = EmailService()

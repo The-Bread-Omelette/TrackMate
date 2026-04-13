@@ -12,6 +12,11 @@ class RegisterRequest(BaseModel):
     # set apply_as_trainer=True to enter the trainer approval queue
     apply_as_trainer: bool = False
 
+    @field_validator('email')
+    @classmethod
+    def email_to_lower(cls, v: str) -> str:
+        return v.lower()
+    
     @field_validator("password")
     @classmethod
     def validate_password(cls, v: str) -> str:
@@ -35,15 +40,14 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    
+    @field_validator('email')
+    @classmethod
+    def email_to_lower(cls, v: str) -> str:
+        return v.lower()
     # No role field — role is derived from DB
 
-
-class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-
-
+    
 class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
@@ -59,12 +63,6 @@ class UserResponse(BaseModel):
         "use_enum_values": True,
     }
 
-
-class AuthResponse(BaseModel):
-    user: UserResponse
-    tokens: TokenResponse
-
-
 class MessageResponse(BaseModel):
     message: str
 
@@ -75,10 +73,19 @@ class ApproveTrainerRequest(BaseModel):
     
 class ResendVerificationRequest(BaseModel):
     email: EmailStr
+    @field_validator('email')
+    @classmethod
+    def email_to_lower(cls, v: str) -> str:
+        return v.lower()
     
 class VerifyEmailRequest(BaseModel):
     email: EmailStr
     otp: str
+    @field_validator('email')
+    @classmethod
+    def email_to_lower(cls, v: str) -> str:
+        return v.lower()
+    
 
     @field_validator("otp")
     @classmethod
@@ -86,3 +93,23 @@ class VerifyEmailRequest(BaseModel):
         if not v.isdigit() or len(v) != 6:
             raise ValueError("OTP must be a 6-digit number")
         return v
+    
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+    @field_validator('email')
+    @classmethod
+    def email_to_lower(cls, v: str) -> str:
+        return v.lower()
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    otp: str
+    new_password: str
+    @field_validator('email')
+    @classmethod
+    def email_to_lower(cls, v: str) -> str:
+        return v.lower()
+    
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str

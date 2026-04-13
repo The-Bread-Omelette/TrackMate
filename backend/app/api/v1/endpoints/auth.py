@@ -1,16 +1,18 @@
 from fastapi import APIRouter, Depends, status, Response, Request, Cookie, Body
 from sqlalchemy.ext.asyncio import AsyncSession
+import redis.asyncio as aioredis
 import uuid
 
 
 from app.db.base import get_db
 from app.schemas.auth import (
-    RegisterRequest, LoginRequest, AuthResponse, TokenResponse,
-    UserResponse, MessageResponse, ApproveTrainerRequest,
-    ResendVerificationRequest, VerifyEmailRequest
+    RegisterRequest, LoginRequest, TokenResponse,
+    UserResponse, MessageResponse, 
+    ResendVerificationRequest, VerifyEmailRequest, ForgotPasswordRequest, ResetPasswordRequest
 )
 from app.services.auth_service import auth_service
 from app.api.v1.deps import get_current_user, require_admin
+from app.core.redis import get_redis 
 from app.models.user import User
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError, ConflictError
@@ -47,30 +49,33 @@ def _clear_auth_cookies(response: Response) -> None:
 async def register(
     payload: RegisterRequest,
     db: AsyncSession = Depends(get_db),
+    redis_client: aioredis.Redis = Depends(get_redis),
 ) -> MessageResponse:
-    return await auth_service.register(db, payload)
+    return await auth_service.register(db, redis_client, payload)
 
 
-@router.post("/login", response_model=AuthResponse, status_code=status.HTTP_200_OK)
+@router.post("/login", response_model=UserResponse, status_code=status.HTTP_200_OK)
 async def login(
     payload: LoginRequest, response: Response, db: AsyncSession = Depends(get_db),
-) -> AuthResponse:
-    auth = await auth_service.login(db, payload)
-    _set_auth_cookies(response, auth.tokens)
-    return auth
+) -> UserResponse:
+    user, tokens = await auth_service.login(db, payload)
+    _set_auth_cookies(response, tokens) 
+    return UserResponse.model_validate(user)
 
 
-@router.post("/refresh")
+@router.post("/refresh", response_model=MessageResponse, status_code=status.HTTP_200_OK)
 async def refresh_token(
     response: Response,
     body: dict = Body(default={}),
     refresh_token_cookie: str | None = Cookie(default=None, alias="refresh_token"),
     db: AsyncSession = Depends(get_db),
-) -> TokenResponse:
+) -> MessageResponse:
     token = body.get("refresh_token") or refresh_token_cookie
     if not token:
         raise AuthenticationError("Refresh token required")
-    return await auth_service.refresh(db, token)
+    new_tokens = await auth_service.refresh(db, token)
+    _set_auth_cookies(response, new_tokens)
+    return MessageResponse(message="Session refreshed")
 
 
 @router.get("/me", response_model=UserResponse, status_code=status.HTTP_200_OK)
@@ -86,20 +91,40 @@ async def logout(
     return MessageResponse(message="Logged out successfully")
 
 
-@router.post("/verify-email", response_model=AuthResponse, status_code=status.HTTP_200_OK)
+@router.post("/verify-email", response_model=UserResponse, status_code=status.HTTP_200_OK)
 async def verify_email(
     payload: VerifyEmailRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
-) -> AuthResponse:
-    auth = await auth_service.verify_email(db, payload.email, payload.otp)
-    _set_auth_cookies(response, auth.tokens)
-    return auth
+    redis_client: aioredis.Redis = Depends(get_redis),
+) -> UserResponse:
+    user, tokens = await auth_service.verify_email(db, redis_client, payload.email, payload.otp)
+    _set_auth_cookies(response, tokens)
+    return UserResponse.model_validate(user)
 
 @router.post("/resend-verification", response_model=MessageResponse, status_code=status.HTTP_200_OK)
 async def resend_verification(
     payload: ResendVerificationRequest,
     db: AsyncSession = Depends(get_db),
+    redis_client: aioredis.Redis = Depends(get_redis),
 ) -> MessageResponse:
-    await auth_service.resend_verification(db, payload.email)
+    await auth_service.resend_verification(db, redis_client, payload.email)
     return MessageResponse(message="Verification email sent")
+
+
+@router.post("/forgot-password", response_model=MessageResponse, status_code=status.HTTP_200_OK)
+async def forgot_password(
+    payload: ForgotPasswordRequest, 
+    db: AsyncSession = Depends(get_db),
+    redis_client: aioredis.Redis = Depends(get_redis),
+):
+    return await auth_service.forgot_password(db, redis_client, payload)
+
+
+@router.post("/reset-password", response_model=MessageResponse, status_code=status.HTTP_200_OK)
+async def reset_password(
+    payload: ResetPasswordRequest, 
+    db: AsyncSession = Depends(get_db),
+    redis_client: aioredis.Redis = Depends(get_redis),
+):
+    return await auth_service.reset_password(db, redis_client, payload)

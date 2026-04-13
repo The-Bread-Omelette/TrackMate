@@ -59,3 +59,15 @@ class AuthUnverifiedState extends AuthState {
 class AuthOnboardingState extends AuthState {
   const AuthOnboardingState();
 }
+
+class AuthPasswordResetEmailSentState extends AuthState {
+  final String email;
+  const AuthPasswordResetEmailSentState({required this.email});
+
+  @override
+  List<Object?> get props => [email];
+}
+
+class AuthPasswordResetSuccessState extends AuthState {
+  const AuthPasswordResetSuccessState();
+}

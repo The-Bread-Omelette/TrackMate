@@ -1,77 +1,81 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+import 'package:cookie_jar/cookie_jar.dart';
+import 'package:path_provider/path_provider.dart';
 import '../constants/api_constants.dart';
-import '../storage/token_storage.dart';
-import '../../features/auth/data/models/auth_models.dart';
 
 class DioClient {
-  static Dio create(TokenStorage tokenStorage) {
-    final dio = Dio(BaseOptions(
+  static Future<Dio> create() async {
+    final options = BaseOptions(
       baseUrl: ApiConstants.baseUrl,
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 15),
-      headers: {'Content-Type': 'application/json'},
-    ));
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      extra: {'withCredentials': true}, 
+    );
+
+    final dio = Dio(options);
+    final refreshDio = Dio(options);
 
     if (kDebugMode) {
-      dio.interceptors.add(LogInterceptor(
+      final logger = LogInterceptor(
         requestBody: true,
         responseBody: true,
         logPrint: (obj) => debugPrint(obj.toString()),
-      ));
+      );
+      dio.interceptors.add(logger);
+      refreshDio.interceptors.add(logger);
     }
 
-    dio.interceptors.add(_AuthInterceptor(dio, tokenStorage));
+    if (!kIsWeb) {
+      final appDocDir = await getApplicationDocumentsDirectory();
+      final String path = "${appDocDir.path}/.cookies/";
+      
+      await Directory(path).create(recursive: true);
+      
+      final cookieJar = PersistCookieJar(
+        ignoreExpires: true,
+        storage: FileStorage(path),
+      );
+
+      final cookieManager = CookieManager(cookieJar);
+      
+      dio.interceptors.add(cookieManager);
+      refreshDio.interceptors.add(cookieManager);
+    } else {
+      debugPrint("[Dio] Web environment detected: Using native browser cookie management.");
+    }
+
+    dio.interceptors.add(_CookieRefreshInterceptor(refreshDio));
+
     return dio;
   }
 }
 
-class _AuthInterceptor extends QueuedInterceptor {
-  final Dio _dio;
-  final TokenStorage _storage;
-
-  _AuthInterceptor(this._dio, this._storage);
-
-  @override
-  Future<void> onRequest(
-    RequestOptions options,
-    RequestInterceptorHandler handler,
-  ) async {
-    final token = await _storage.getAccess();
-    if (token != null) {
-      options.headers['Authorization'] = 'Bearer $token';
-    }
-    handler.next(options);
-  }
+class _CookieRefreshInterceptor extends QueuedInterceptor {
+  final Dio _refreshDio; // Uses the separate instance
+  
+  _CookieRefreshInterceptor(this._refreshDio);
 
   @override
-  Future<void> onError(
-    DioException err,
-    ErrorInterceptorHandler handler,
-  ) async {
-    if (err.response?.statusCode == 401 &&
-        err.requestOptions.path != ApiConstants.refresh) {
+  Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
+    if (err.response?.statusCode == 401 && err.requestOptions.path != ApiConstants.refresh) {
       try {
-        final refreshToken = await _storage.getRefresh();
-        if (refreshToken == null) return handler.next(err);
+        final refreshResponse = await _refreshDio.post(ApiConstants.refresh);
 
-        final refreshDio = Dio(BaseOptions(baseUrl: ApiConstants.baseUrl));
-        final res = await refreshDio.post(
-          ApiConstants.refresh,
-          data: {'refresh_token': refreshToken},
-        );
-        final tokens = TokenModel.fromJson(res.data as Map<String, dynamic>);
-        await _storage.save(tokens);
-
-        err.requestOptions.headers['Authorization'] =
-            'Bearer ${tokens.accessToken}';
-        final response = await _dio.fetch(err.requestOptions);
-        handler.resolve(response);
-        return;
-      } catch (_) {
-        await _storage.clear();
+        if (refreshResponse.statusCode == 200 || refreshResponse.statusCode == 204) {
+          final response = await _refreshDio.fetch(err.requestOptions);
+          return handler.resolve(response);
+        }
+      } catch (e) {
+        debugPrint("[Auth] Token refresh failed: $e");
       }
     }
-    handler.next(err);
+    return handler.next(err);
   }
 }

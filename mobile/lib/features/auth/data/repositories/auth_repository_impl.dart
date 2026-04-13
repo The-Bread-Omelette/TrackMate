@@ -1,6 +1,5 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/errors/failures.dart';
-import '../../../../core/storage/token_storage.dart';
 import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../datasources/auth_remote_datasource.dart';
@@ -8,11 +7,8 @@ import '../models/auth_models.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   final AuthRemoteDataSource remoteDataSource;
-  final TokenStorage tokenStorage;
-
   AuthRepositoryImpl({
     required this.remoteDataSource,
-    required this.tokenStorage,
   });
 
   @override
@@ -43,9 +39,8 @@ class AuthRepositoryImpl implements AuthRepository {
     required String password,
   }) async {
     try {
-      final auth = await remoteDataSource.login(email: email, password: password);
-      await tokenStorage.save(auth.tokens);
-      return Right(_mapUser(auth.user));
+      final user = await remoteDataSource.login(email: email, password: password);
+      return Right(_mapUser(user));
     } on Failure catch (f) {
       return Left(f);
     } catch (_) {
@@ -59,9 +54,8 @@ class AuthRepositoryImpl implements AuthRepository {
     required String otp,
   }) async {
     try {
-      final result = await remoteDataSource.verifyEmail(email: email, otp: otp);
-      await tokenStorage.save(result.tokens);
-      return Right(_mapUser(result.user));
+      final user = await remoteDataSource.verifyEmail(email: email, otp: otp);
+      return Right(_mapUser(user));
     } on Failure catch (f) {
       return Left(f);
     } catch (_) {
@@ -86,7 +80,7 @@ class AuthRepositoryImpl implements AuthRepository {
     try {
       await remoteDataSource.logout();
     } catch (_) {}
-    await tokenStorage.clear();
+    
     return const Right(null);
   }
 
@@ -103,7 +97,36 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
-  Future<bool> hasStoredSession() async => false;
+  Future<Either<Failure, void>> forgotPassword(String email) async {
+    try {
+      await remoteDataSource.forgotPassword(email);
+      return const Right(null);
+    } on Failure catch (f) {
+      return Left(f);
+    } catch (_) {
+      return const Left(UnknownFailure());
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> resetPassword({
+    required String email,
+    required String otp,
+    required String newPassword,
+  }) async {
+    try {
+      await remoteDataSource.resetPassword(
+        email: email,
+        otp: otp,
+        newPassword: newPassword,
+      );
+      return const Right(null);
+    } on Failure catch (f) {
+      return Left(f);
+    } catch (_) {
+      return const Left(UnknownFailure());
+    }
+  }
 
   UserEntity _mapUser(UserModel model) => UserEntity(
         id: model.id,

@@ -7,6 +7,7 @@ import '../../../../core/router/app_router.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
+import 'forgot_password_page.dart';
 
 class LoginPage extends StatefulWidget {
   final VoidCallback onNavigateToRegister;
@@ -199,25 +200,27 @@ class _LoginPageState extends State<LoginPage> {
                               },
                             ),
                             const SizedBox(height: 8),
-                            // 8Align(
-                            //   alignment: Alignment.centerRight,
-                            //   child: TextButton(
-                            //     onPressed: () {},
-                            //     style: TextButton.styleFrom(
-                            //       padding: EdgeInsets.zero,
-                            //       minimumSize: const Size(0, 0),
-                            //       tapTargetSize:
-                            //           MaterialTapTargetSize.shrinkWrap,
-                            //     ),
-                            //     // child: const Text(
-                            //     //   'Forgot password?',
-                            //     //   style: TextStyle(
-                            //     //     fontSize: 13,
-                            //     //     color: AppColors.primary,
-                            //     //   ),
-                            //     // ),
-                            //   ),
-                            // ),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: () {
+                                  context.push(AppRouter.forgotPassword); // Use GoRouter instead of Navigator
+                                },
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(0, 0),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text(
+                                  'Forgot password?',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
                             const SizedBox(height: 20),
                             AnimatedSwitcher(
                               duration: const Duration(milliseconds: 200),

@@ -66,3 +66,26 @@ class AuthVerifyEmailEvent extends AuthEvent {
 class AuthCompleteOnboardingEvent extends AuthEvent {
   const AuthCompleteOnboardingEvent();
 }
+
+class AuthForgotPasswordEvent extends AuthEvent {
+  final String email;
+  const AuthForgotPasswordEvent({required this.email});
+
+  @override
+  List<Object?> get props => [email];
+}
+
+class AuthResetPasswordEvent extends AuthEvent {
+  final String email;
+  final String otp;
+  final String newPassword;
+
+  const AuthResetPasswordEvent({
+    required this.email,
+    required this.otp,
+    required this.newPassword,
+  });
+
+  @override
+  List<Object?> get props => [email, otp, newPassword];
+}

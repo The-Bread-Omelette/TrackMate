@@ -16,7 +16,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<AuthResendVerificationEvent>(_onResendVerification);
     on<AuthVerifyEmailEvent>(_onVerifyEmail);
     on<AuthCompleteOnboardingEvent>(_onCompleteOnboarding);
+    on<AuthForgotPasswordEvent>(_onForgotPassword);
+    on<AuthResetPasswordEvent>(_onResetPassword);
   }
+  
 
   Future<void> _onVerifyEmail(
     AuthVerifyEmailEvent event,
@@ -128,6 +131,40 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         emit(AuthRegisteredState(email: event.email));
       },
       (_) => emit(AuthRegisteredState(email: event.email)),
+    );
+  }
+  Future<void> _onForgotPassword(
+    AuthForgotPasswordEvent event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(const AuthLoadingState());
+    final result = await repository.forgotPassword(event.email);
+    result.fold(
+      (failure) {
+        emit(AuthErrorState(failure.message));
+        emit(const AuthUnauthenticatedState());
+      },
+      (_) => emit(AuthPasswordResetEmailSentState(email: event.email)),
+    );
+  }
+
+  Future<void> _onResetPassword(
+    AuthResetPasswordEvent event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(const AuthLoadingState());
+    final result = await repository.resetPassword(
+      email: event.email,
+      otp: event.otp,
+      newPassword: event.newPassword,
+    );
+    result.fold(
+      (failure) {
+        emit(AuthErrorState(failure.message));
+        // Fallback to the previous state so they can try again
+        emit(AuthPasswordResetEmailSentState(email: event.email));
+      },
+      (_) => emit(const AuthPasswordResetSuccessState()),
     );
   }
 }

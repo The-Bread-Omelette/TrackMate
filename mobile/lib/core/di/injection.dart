@@ -1,7 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:get_it/get_it.dart';
 import '../network/dio_client.dart';
-import '../storage/token_storage.dart';
 import '../../features/auth/data/datasources/auth_remote_datasource.dart';
 import '../../features/auth/data/repositories/auth_repository_impl.dart';
 import '../../features/auth/domain/repositories/auth_repository.dart';
@@ -19,10 +18,11 @@ import '../../features/messaging/data/messaging_remote_datasource.dart';
 
 final sl = GetIt.instance;
 
-void setupDependencies() {
-  sl.registerLazySingleton<TokenStorage>(() => TokenStorage());
-
-  sl.registerLazySingleton<Dio>(() => DioClient.create(sl<TokenStorage>()));
+Future<void> setupDependencies() async {
+  sl.registerSingletonAsync<Dio>(() async {
+    return await DioClient.create();
+  });
+  await sl.isReady<Dio>();
 
   sl.registerLazySingleton<AuthRemoteDataSource>(
     () => AuthRemoteDataSourceImpl(sl<Dio>()),
@@ -30,7 +30,6 @@ void setupDependencies() {
   sl.registerLazySingleton<AuthRepository>(
     () => AuthRepositoryImpl(
       remoteDataSource: sl<AuthRemoteDataSource>(),
-      tokenStorage: sl<TokenStorage>(),
     ),
   );
   sl.registerLazySingleton<AuthBloc>(
@@ -60,15 +59,15 @@ void setupDependencies() {
   );
   sl.registerLazySingleton<TrainerRemoteDataSource>(
     () => TrainerRemoteDataSource(sl<Dio>()),
-);
-sl.registerLazySingleton<SocialRemoteDataSource>(
-  () => SocialRemoteDataSource(sl<Dio>()),
-);
-sl.registerLazySingleton<NotificationsRemoteDataSource>(
-  () => NotificationsRemoteDataSource(sl<Dio>()),
-);
+  );
+  sl.registerLazySingleton<SocialRemoteDataSource>(
+    () => SocialRemoteDataSource(sl<Dio>()),
+  );
+  sl.registerLazySingleton<NotificationsRemoteDataSource>(
+    () => NotificationsRemoteDataSource(sl<Dio>()),
+  );
 
-sl.registerLazySingleton<MessagingRemoteDataSource>(
-  () => MessagingRemoteDataSource(sl<Dio>()),
-);
+  sl.registerLazySingleton<MessagingRemoteDataSource>(
+    () => MessagingRemoteDataSource(sl<Dio>()),
+  );
 }

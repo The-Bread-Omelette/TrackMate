@@ -17,6 +17,8 @@ class ApiConstants {
   static const String me = '$apiVersion/auth/me';
   static const String verifyEmail = '$apiVersion/auth/verify-email';
   static const String resendVerification = '$apiVersion/auth/resend-verification';
+  static const String forgotPassword = '$apiVersion/auth/forgot-password';
+  static const String resetPassword = '$apiVersion/auth/reset-password';
 
   // Profile
   static const String profile = '$apiVersion/profile/me';
