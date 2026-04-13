@@ -3,6 +3,7 @@ import '../../../../core/constants/api_constants.dart';
 import '../../../../core/errors/api_exception.dart';
 import '../../../../core/errors/failures.dart';
 import '../models/auth_models.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 abstract class AuthRemoteDataSource {
   Future<void> register({
@@ -81,6 +82,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     } on DioException catch (e) {
       throw mapDioError(e);
     }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('trainer_application');
   }
 
   @override
