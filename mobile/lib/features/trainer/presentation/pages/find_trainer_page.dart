@@ -98,7 +98,15 @@ class _FindTrainerPageState extends State<FindTrainerPage> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () async {
-                  if (goalCtrl.text.trim().isEmpty) return;
+                  if (goalCtrl.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Please enter your fitness goal.'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    return;
+                  }
                   Navigator.pop(ctx); 
                   try {
                     await _ds.sendTrainerRequest(trainerId, goalCtrl.text.trim());
