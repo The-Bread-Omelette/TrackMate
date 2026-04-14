@@ -10,6 +10,7 @@ import '../../shared/theme/app_theme.dart';
 import '../../core/di/injection.dart';
 import '../../core/constants/api_constants.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -34,11 +35,10 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _activityLevel;
   DateTime? _dob;
 
-  // 🔥 Track Trainer Status
   bool _hasTrainer = false;
   Map<String, dynamic>? _savedApplication;
 
-  Map<String, bool> _notifPrefs = {
+  final Map<String, bool> _notifPrefs = {
     'friend_request': true,
     'trainer_request': true,
     'new_message': true,
@@ -76,7 +76,6 @@ class _SettingsPageState extends State<SettingsPage> {
     super.dispose();
   }
 
-  // 🔥 Helper to beautifully capitalize strings (e.g., "moderately_active" -> "Moderately Active")
   String _capitalize(String s) {
     return s.split('_').map((word) => word.isNotEmpty ? '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}' : '').join(' ');
   }
@@ -101,11 +100,12 @@ class _SettingsPageState extends State<SettingsPage> {
 
       _waterGoalCtrl.text = (prefs.getInt('local_water_goal') ?? 2500).toString();
 
-      // Fetch saved application if exists
-      final appJson = prefs.getString('trainer_application');
-      if (appJson != null) {
-        _savedApplication = jsonDecode(appJson);
-      }
+      try {
+        final appRes = await _dio.get('/api/v1/trainer/application');
+        if (appRes.data != null && appRes.data['application'] != null) {
+          _savedApplication = appRes.data['application'];
+        }
+      } catch (_) {}
 
       final res = await _dio.get(ApiConstants.profile);
       final data = res.data as Map<String, dynamic>;
@@ -123,7 +123,6 @@ class _SettingsPageState extends State<SettingsPage> {
         _dob = DateTime.tryParse(p['date_of_birth']);
       }
 
-      // Sync latest weight from Analytics Trend
       try {
         final weightRes = await _dio.get('/api/v1/fitness/weight/trend', queryParameters: {'days': 30});
         final trendData = weightRes.data as List<dynamic>;
@@ -132,7 +131,6 @@ class _SettingsPageState extends State<SettingsPage> {
         }
       } catch (_) {}
 
-      // Check if user has an active trainer
       try {
         final trainerRes = await _dio.get('/api/v1/trainer/my-trainer');
         if (trainerRes.data != null && trainerRes.data['trainer'] != null) {
@@ -163,7 +161,6 @@ class _SettingsPageState extends State<SettingsPage> {
         'activity_level': _activityLevel,
       });
 
-      // Log weight to Analytics backend so charts update instantly
       if (w != null) {
         try {
           await _dio.post('/api/v1/fitness/weight', data: {'weight_kg': w});
@@ -181,97 +178,138 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() => _saving = false);
   }
 
-  // 🔥 View and Withdraw existing application
   void _showApplicationDetails(BuildContext context) {
     if (_savedApplication == null) return;
+    
+    bool isWithdrawing = false;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      builder: (ctx) => StatefulBuilder(
+        builder: (BuildContext context, StateSetter setModalState) {
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Your Application', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-                  child: const Text('Pending Review', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12)),
-                )
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Your Application', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+                      child: const Text('Pending Review', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12)),
+                    )
+                  ],
+                ),
+                const SizedBox(height: 24),
+                _infoTile('Phone Number', _savedApplication!['phone_number']?.toString() ?? ''),
+                _infoTile('Experience', '${_savedApplication!['experience_years']} years'),
+                _infoTile('Hourly Rate', '₹${_savedApplication!['hourly_rate']}'),
+                const SizedBox(height: 12),
+                const Text('About You', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                const SizedBox(height: 4),
+                Text(_savedApplication!['about']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 16),
+                const Text('Specializations', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                const SizedBox(height: 4),
+                Text(_savedApplication!['specializations']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 16),
+                const Text('Certifications', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                const SizedBox(height: 4),
+                Text(_savedApplication!['certifications']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 32),
+
+                // 🔥 Two discrete buttons: Edit vs Withdraw
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.edit, color: AppColors.primary, size: 20),
+                        label: const Text('Edit', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+                        style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.primary), padding: const EdgeInsets.symmetric(vertical: 14)),
+                        onPressed: isWithdrawing ? null : () {
+                          Navigator.pop(ctx);
+                          _showTrainerApplicationDialog(context, existingData: _savedApplication);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: isWithdrawing 
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.error)) 
+                            : const Icon(Icons.delete_outline, color: AppColors.error, size: 20),
+                        label: const Text('Withdraw', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
+                        style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.error), padding: const EdgeInsets.symmetric(vertical: 14)),
+                        onPressed: isWithdrawing ? null : () async {
+                          setModalState(() { isWithdrawing = true; });
+                          try {
+                            await _dio.delete('/api/v1/trainer/application');
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.remove('trainer_application');
+                            
+                            setState(() { _savedApplication = null; });
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Application withdrawn successfully.')));
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to withdraw application.'), backgroundColor: AppColors.error));
+                            }
+                            setModalState(() { isWithdrawing = false; });
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: isWithdrawing ? null : () => Navigator.pop(ctx),
+                    child: const Text('Close Window'),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 24),
-            _infoTile('Phone Number', _savedApplication!['phone_number']),
-            _infoTile('Experience', '${_savedApplication!['experience_years']} years'),
-            _infoTile('Hourly Rate', '₹${_savedApplication!['hourly_rate']}'),
-            const SizedBox(height: 12),
-            const Text('About You', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-            const SizedBox(height: 4),
-            Text(_savedApplication!['about'], style: const TextStyle(fontWeight: FontWeight.w500)),
-            const SizedBox(height: 16),
-            const Text('Specializations', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-            const SizedBox(height: 4),
-            Text(_savedApplication!['specializations'], style: const TextStyle(fontWeight: FontWeight.w500)),
-            const SizedBox(height: 16),
-            const Text('Certifications', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-            const SizedBox(height: 4),
-            Text(_savedApplication!['certifications'], style: const TextStyle(fontWeight: FontWeight.w500)),
-            const SizedBox(height: 32),
-
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.refresh, color: Colors.orange),
-                label: const Text('Withdraw & Re-apply', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
-                style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.orange)),
-                onPressed: () async {
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.remove('trainer_application');
-                  setState(() {
-                    _savedApplication = null;
-                  });
-                  if (ctx.mounted) Navigator.pop(ctx);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Application withdrawn. You can now submit a new one.')));
-                  }
-                },
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Close Window'),
-              ),
-            ),
-          ],
-        ),
+          );
+        }
       ),
     );
   }
 
-  Future<void> _showTrainerApplicationDialog(BuildContext context) async {
-    final phoneCtrl = TextEditingController();
-    final expCtrl = TextEditingController();
-    final aboutCtrl = TextEditingController();
-    final specCtrl = TextEditingController();
-    final certCtrl = TextEditingController();
-    final rateCtrl = TextEditingController();
+  Future<void> _showTrainerApplicationDialog(BuildContext context, {Map<String, dynamic>? existingData}) async {
+    final bool isUpdating = existingData != null;
+    
+    final phoneCtrl = TextEditingController(text: existingData?['phone_number']?.toString().replaceAll('+91', '') ?? '');
+    final expCtrl = TextEditingController(text: existingData?['experience_years']?.toString() ?? '');
+    final aboutCtrl = TextEditingController(text: existingData?['about']?.toString() ?? '');
+    final rateCtrl = TextEditingController(text: existingData?['hourly_rate']?.toString() ?? '');
 
     List<String> specializations = [];
+    if (existingData?['specializations'] != null) {
+      specializations = (existingData!['specializations'] as String).split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    }
+
     List<String> certifications = [];
+    if (existingData?['certifications'] != null) {
+      certifications = (existingData!['certifications'] as String).split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    }
+
+    final specCtrl = TextEditingController();
+    final certCtrl = TextEditingController();
 
     final formKey = GlobalKey<FormState>();
     bool autoValidate = false;
+    bool isSubmitting = false;
 
     await showModalBottomSheet(
       context: context,
@@ -303,7 +341,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Trainer Application', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                      Text(isUpdating ? 'Update Application' : 'Trainer Application', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       const Text('All fields are mandatory.', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
                       const SizedBox(height: 16),
@@ -325,7 +363,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
                       TextFormField(
                         controller: expCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: false),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: false, signed: false),
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                         decoration: const InputDecoration(labelText: 'Years of Experience'),
                         validator: (val) => int.tryParse(val?.trim() ?? '') == null ? 'Must be a valid number' : null,
                       ),
@@ -385,7 +424,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
                       TextFormField(
                         controller: rateCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false), 
+                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
                         decoration: const InputDecoration(labelText: 'Hourly Rate (₹)', prefixText: '₹ '),
                         validator: (val) => double.tryParse(val?.trim() ?? '') == null ? 'Must be a valid number' : null,
                       ),
@@ -395,7 +435,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         width: double.infinity,
                         height: 50,
                         child: ElevatedButton(
-                          onPressed: () async {
+                          onPressed: isSubmitting ? null : () async {
                             if (specCtrl.text.trim().isNotEmpty) {
                               if (!specializations.contains(specCtrl.text.trim())) specializations.add(specCtrl.text.trim());
                               specCtrl.clear();
@@ -410,7 +450,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               return;
                             }
 
-                            Navigator.pop(ctx);
+                            setModalState(() { isSubmitting = true; });
 
                             final payload = {
                               'phone_number': '+91${phoneCtrl.text.trim()}',
@@ -422,21 +462,32 @@ class _SettingsPageState extends State<SettingsPage> {
                             };
 
                             try {
-                              await _dio.post(ApiConstants.trainerApply, data: payload);
-
+                              // 🔥 Route logic based on isUpdating flag
+                              if (isUpdating) {
+                                await _dio.put('/api/v1/trainer/application', data: payload);
+                              } else {
+                                await _dio.post(ApiConstants.trainerApply, data: payload);
+                              }
+                              
                               final prefs = await SharedPreferences.getInstance();
                               await prefs.setString('trainer_application', jsonEncode(payload));
 
                               setState(() { _savedApplication = payload; });
 
+                              if (ctx.mounted) Navigator.pop(ctx);
+
                               if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Application submitted! Admin will review it.')));
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                  content: Text(isUpdating ? 'Application updated!' : 'Application submitted! Admin will review it.')
+                                ));
                               }
                             } on DioException catch (e) {
                               if (e.response?.statusCode == 409) {
                                 final prefs = await SharedPreferences.getInstance();
                                 await prefs.setString('trainer_application', jsonEncode(payload));
                                 setState(() { _savedApplication = payload; });
+                                
+                                if (ctx.mounted) Navigator.pop(ctx);
 
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -444,10 +495,20 @@ class _SettingsPageState extends State<SettingsPage> {
                                     backgroundColor: Colors.orange,
                                   ));
                                 }
+                              } else {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save application.'), backgroundColor: AppColors.error));
+                                }
+                              }
+                            } finally {
+                              if (ctx.mounted) {
+                                setModalState(() { isSubmitting = false; });
                               }
                             }
                           },
-                          child: const Text('Submit Application', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          child: isSubmitting 
+                              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                              : Text(isUpdating ? 'Save Changes' : 'Submit Application', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                         ),
                       ),
                     ],
@@ -463,8 +524,6 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final user = (context.read<AuthBloc>().state as AuthAuthenticatedState).user;
-
-    // 🔥 Determine role to conditionally render UI blocks
     final bool isTrainer = user.role.name == 'trainer';
 
     return MainLayout(
@@ -493,7 +552,6 @@ class _SettingsPageState extends State<SettingsPage> {
             ]),
             const SizedBox(height: 20),
 
-            // 🔥 Hide Body Metrics if user is a Trainer
             if (!isTrainer) ...[
               _header('Body Metrics'),
               _card([
@@ -518,7 +576,6 @@ class _SettingsPageState extends State<SettingsPage> {
             )).toList()),
             const SizedBox(height: 20),
 
-            // 🔥 Hide Fitness Goals if user is a Trainer
             if (!isTrainer) ...[
               _header('Fitness Goals'),
               _card([
@@ -543,7 +600,6 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
 
-            // 🔥 Keep Trainer Center strictly for Trainees
             if (user.role.name == 'trainee') ...[
               const SizedBox(height: 20),
               _header('Trainer Center'),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 
 class TmTextField extends StatefulWidget {
@@ -10,6 +11,7 @@ class TmTextField extends StatefulWidget {
   final String? Function(String?)? validator;
   final TextInputAction? textInputAction;
   final VoidCallback? onEditingComplete;
+  final List<TextInputFormatter>? inputFormatters;
 
   const TmTextField({
     super.key,
@@ -21,6 +23,7 @@ class TmTextField extends StatefulWidget {
     this.validator,
     this.textInputAction,
     this.onEditingComplete,
+    this.inputFormatters,
   });
 
   @override
@@ -39,6 +42,7 @@ class _TmTextFieldState extends State<TmTextField> {
       textInputAction: widget.textInputAction,
       onEditingComplete: widget.onEditingComplete,
       validator: widget.validator,
+      inputFormatters: widget.inputFormatters,
       style: const TextStyle(
         fontSize: 15,
         color: AppColors.textPrimary,

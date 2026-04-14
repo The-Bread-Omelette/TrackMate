@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 from app.db.base import get_db
@@ -15,11 +15,11 @@ router = APIRouter(prefix="/trainer", tags=["Trainer"])
 
 class TrainerApplicationRequest(BaseModel):
     phone_number: Optional[str] = None
-    experience_years: Optional[int] = None
+    experience_years: Optional[int] = Field(default=None, ge=0, description="Years of experience cannot be negative")
     about: Optional[str] = None
     specializations: Optional[str] = None
     certifications: Optional[str] = None
-    hourly_rate: Optional[float] = None
+    hourly_rate: Optional[float] = Field(default=None, ge=0.0, description="Hourly rate cannot be negative")
 
 
 class TrainerRequestBody(BaseModel):
@@ -57,6 +57,52 @@ async def submit_application(
         payload.certifications, payload.hourly_rate,
     )
     return {"application_id": str(app.id), "status": app.status}
+
+
+@router.get("/application", status_code=status.HTTP_200_OK)
+async def get_my_application(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    app = await trainer_service.get_my_application(db, current_user.id)
+    if not app:
+        return {"application": None}
+    return {
+        "application": {
+            "id": str(app.id),
+            "phone_number": app.phone_number,
+            "experience_years": app.experience_years,
+            "about": app.about,
+            "specializations": app.specializations,
+            "certifications": app.certifications,
+            "hourly_rate": app.hourly_rate,
+            "status": app.status,
+        }
+    }
+
+
+@router.put("/application", status_code=status.HTTP_200_OK)
+async def update_my_application(
+    payload: TrainerApplicationRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    app = await trainer_service.update_application(
+        db, current_user.id,
+        payload.phone_number, payload.experience_years,
+        payload.about, payload.specializations,
+        payload.certifications, payload.hourly_rate,
+    )
+    return {"message": "Application updated successfully"}
+
+
+@router.delete("/application", status_code=status.HTTP_200_OK)
+async def withdraw_application(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await trainer_service.withdraw_application(db, current_user.id)
+    return {"message": "Application withdrawn successfully"}
 
 
 # ── Trainee: Browse & Request Trainers ────────────────────────────────────────
@@ -127,7 +173,6 @@ async def quit_current_trainer(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # 🔥 NEW: Trainee firing their trainer
     await trainer_service.quit_trainer(db, current_user)
     return {"message": "Successfully removed trainer."}
 

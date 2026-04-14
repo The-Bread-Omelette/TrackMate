@@ -55,6 +55,64 @@ class TrainerService:
         await db.flush()
         return app
 
+    async def get_my_application(self, db: AsyncSession, user_id: uuid.UUID) -> TrainerApplication | None:
+        result = await db.execute(
+            select(TrainerApplication).where(TrainerApplication.user_id == user_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def update_application(
+        self,
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        phone_number: str | None,
+        experience_years: int | None,
+        about: str | None,
+        specializations: str | None,
+        certifications: str | None,
+        hourly_rate: float | None,
+    ) -> TrainerApplication:
+        result = await db.execute(
+            select(TrainerApplication).where(TrainerApplication.user_id == user_id)
+        )
+        app = result.scalar_one_or_none()
+        if not app:
+            raise NotFoundError("Application not found")
+
+        if phone_number is not None: app.phone_number = phone_number
+        if experience_years is not None: app.experience_years = experience_years
+        if about is not None: app.about = about
+        if specializations is not None: app.specializations = specializations
+        if certifications is not None: app.certifications = certifications
+        if hourly_rate is not None: app.hourly_rate = hourly_rate
+
+        # Sync profile updates as well
+        from app.services.profile_service import profile_service
+        from app.schemas.profile import ProfileUpdateRequest
+        from app.models.user import User as UserModel
+        
+        user_result = await db.execute(select(UserModel).where(UserModel.id == user_id))
+        user = user_result.scalar_one_or_none()
+        if user:
+            await profile_service.update_profile(db, user, ProfileUpdateRequest(
+                phone_number=app.phone_number,
+                hourly_rate=app.hourly_rate,
+                specializations=app.specializations,
+                experience_years=app.experience_years,
+            ))
+
+        await db.flush()
+        return app
+
+    async def withdraw_application(self, db: AsyncSession, user_id: uuid.UUID) -> None:
+        result = await db.execute(
+            select(TrainerApplication).where(TrainerApplication.user_id == user_id)
+        )
+        app = result.scalar_one_or_none()
+        if app:
+            await db.delete(app)
+            await db.flush()
+
     # ── Trainee → Trainer Request ─────────────────────────────────────────────
 
     async def send_trainer_request(
@@ -119,7 +177,6 @@ class TrainerService:
             if trainee:
                 trainee.trainer_id = trainer.id
                 
-                # 🔥 NEW: Automatically reject any other pending requests from this trainee
                 await db.execute(
                     TrainerRequest.__table__.update()
                     .where(
@@ -156,7 +213,6 @@ class TrainerService:
         old_trainer_id = trainee.trainer_id
         trainee.trainer_id = None
         
-        # Mark active request as rejected so they can re-apply later
         await db.execute(
             TrainerRequest.__table__.update()
             .where(
@@ -169,7 +225,6 @@ class TrainerService:
             .values(status=TrainerRequestStatus.REJECTED)
         )
         
-        # Add a system message in the chat
         try:
             from app.services.messaging_service import messaging_service
             conv = await messaging_service.get_or_create_conversation(db, trainee.id, old_trainer_id)
@@ -204,7 +259,6 @@ class TrainerService:
         return [self._student_summary(s) for s in students]
 
     def _student_summary(self, user: User) -> dict:
-        # Adherence score: random algorithm based on profile completeness
         seed = int(str(user.id).replace("-", "")[:8], 16)
         random.seed(seed)
         adherence = random.randint(55, 98)
@@ -223,7 +277,6 @@ class TrainerService:
             "streak": streak,
             "excellence_pct": min(excellence, 100),
             "needs_attention": needs_attention,
-            # 🔥 NEW: Send actual profile details to the trainer
             "height_cm": user.profile.height_cm if user.profile else None,
             "weight_kg": user.profile.weight_kg if user.profile else None,
             "daily_step_goal": user.profile.daily_step_goal if user.profile else None,
