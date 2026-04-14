@@ -23,21 +23,29 @@ class AuthService:
 
     async def register(self, db: AsyncSession, redis_client: aioredis.Redis, payload: RegisterRequest) -> MessageResponse:
         result = await db.execute(select(User).where(User.email == payload.email))
-        if result.scalar_one_or_none():
-            raise ConflictError("An account with this email already exists")
-
-        user = User(
-            email=payload.email,
-            hashed_password=hash_password(payload.password),
-            full_name=payload.full_name,
-            role=UserRole.TRAINEE,
-            trainer_status=TrainerStatus.PENDING if payload.apply_as_trainer else TrainerStatus.NONE,
-            verification_otp=None,
-            otp_expires_at=None,
-            is_active=False,
-            is_verified=False,
-        )
-        db.add(user)
+        existing_user = result.scalar_one_or_none()
+        
+        if existing_user:
+            if existing_user.is_verified:
+                raise ConflictError("An account with this email already exists")
+            else:
+                existing_user.hashed_password = hash_password(payload.password)
+                existing_user.full_name = payload.full_name
+                existing_user.trainer_status = TrainerStatus.PENDING if payload.apply_as_trainer else TrainerStatus.NONE
+                user = existing_user
+        else:
+            user = User(
+                email=payload.email,
+                hashed_password=hash_password(payload.password),
+                full_name=payload.full_name,
+                role=UserRole.TRAINEE,
+                trainer_status=TrainerStatus.PENDING if payload.apply_as_trainer else TrainerStatus.NONE,
+                verification_otp=None,
+                otp_expires_at=None,
+                is_active=False,
+                is_verified=False,
+            )
+            db.add(user)
         await db.flush()
         await db.refresh(user)
         
