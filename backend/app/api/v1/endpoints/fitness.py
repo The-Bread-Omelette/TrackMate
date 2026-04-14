@@ -3,7 +3,7 @@ from datetime import datetime, date, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.db.base import get_db
 from app.api.v1.deps import get_current_user
@@ -32,10 +32,10 @@ class FinishSessionRequest(BaseModel):
 
 class LogSetRequest(BaseModel):
     exercise_id: uuid.UUID
-    set_number: int
-    reps: Optional[int] = None
-    weight_kg: Optional[float] = None
-    duration_seconds: Optional[int] = None
+    set_number: int = Field(..., ge=1, le=100)
+    reps: Optional[int] = Field(None, ge=0, le=1000)
+    weight_kg: Optional[float] = Field(None, ge=0, le=2000)
+    duration_seconds: Optional[int] = Field(None, ge=0, le=36000)
     notes: Optional[str] = None
 
 class LogMealRequest(BaseModel):

@@ -473,8 +473,21 @@ class _GymSessionPageState extends State<GymSessionPage> {
     double? weight = double.tryParse(_weightCtrl.text);
     int? duration = int.tryParse(_durationCtrl.text);
 
-    if (isTime && duration == null) return;
-    if (!isTime && reps == null) return;
+    if (isTime) {
+      if (duration == null || duration < 0 || duration > 36000) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a valid duration (0-36000s).')));
+        return;
+      }
+    } else {
+      if (reps == null || reps < 0 || reps > 1000) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a valid rep count (0-1000).')));
+        return;
+      }
+      if (weight != null && (weight < 0 || weight > 2000)) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a realistic weight (0-2000kg).')));
+        return;
+      }
+    }
 
     final double multiplier = (_selectedExercise!['multiplier'] as num?)?.toDouble() ?? 3.0;
     final double activeMinutes = isTime ? (duration! / 60.0) : ((reps! * 4.0) / 60.0); 
