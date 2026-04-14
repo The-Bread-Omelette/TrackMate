@@ -192,7 +192,7 @@ class _ChatPageState extends State<ChatPage> {
                     style: const TextStyle(
                         fontSize: 15, fontWeight: FontWeight.bold)),
                 Text(
-                  _connected ? 'Online' : 'Connecting...',
+                  _connected ? 'Connected' : 'Connecting...',
                   style: TextStyle(
                       fontSize: 11,
                       color:

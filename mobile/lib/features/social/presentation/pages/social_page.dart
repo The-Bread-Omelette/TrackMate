@@ -75,7 +75,15 @@ class _SocialPageState extends State<SocialPage>
   }
 
   Future<void> _createPost() async {
-    if (_postCtrl.text.trim().isEmpty) return;
+    if (_postCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Post can\'t be empty'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     try {
       await _ds.createPost(_postCtrl.text.trim());
       _postCtrl.clear();
