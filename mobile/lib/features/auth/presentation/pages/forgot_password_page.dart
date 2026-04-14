@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/tm_text_field.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
-import 'reset_password_page.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -40,7 +40,11 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            // Reset BLoC state so router cleanly returns to login
+            context.read<AuthBloc>().add(const AuthLogoutEvent());
+            context.go('/login');
+          },
         ),
       ),
       body: BlocConsumer<AuthBloc, AuthState>(
@@ -62,13 +66,6 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                 backgroundColor: AppColors.success,
                 behavior: SnackBarBehavior.floating,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-            );
-            // Navigate to Reset Password Page
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ResetPasswordPage(email: state.email),
               ),
             );
           }
