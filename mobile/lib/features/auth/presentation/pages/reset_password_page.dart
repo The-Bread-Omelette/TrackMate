@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -21,8 +22,41 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
 
+  Timer? _timer;
+  int _secondsRemaining = 30;
+  bool _canResend = false;
+  bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer(); // Starts the countdown automatically when page loads
+  }
+
+  void _startTimer() {
+    setState(() {
+      _secondsRemaining = 30;
+      _canResend = false;
+    });
+
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          if (_secondsRemaining > 0) {
+            _secondsRemaining--;
+          } else {
+            _canResend = true;
+            _timer?.cancel();
+          }
+        });
+      }
+    });
+  }
+
   @override
   void dispose() {
+    _timer?.cancel();
     _otpController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
@@ -40,6 +74,15 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
         );
   }
 
+  Future<void> _resend() async {
+    setState(() => _sending = true);
+    // Dispatching ForgotPasswordEvent again to trigger a fresh OTP email from the backend
+    context.read<AuthBloc>().add(
+          AuthForgotPasswordEvent(email: widget.email),
+        );
+    _startTimer();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -50,7 +93,6 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () {
-            // Reset BLoC state so router cleanly returns to login
             context.read<AuthBloc>().add(const AuthLogoutEvent());
             context.go('/login');
           },
@@ -59,10 +101,22 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
       body: BlocConsumer<AuthBloc, AuthState>(
         listener: (context, state) {
           if (state is AuthErrorState) {
+            setState(() => _sending = false);
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(state.message),
                 backgroundColor: AppColors.error,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            );
+          }
+          if (state is AuthPasswordResetEmailSentState) {
+            setState(() => _sending = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('New OTP sent to your email!'),
+                backgroundColor: AppColors.success,
                 behavior: SnackBarBehavior.floating,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
@@ -77,7 +131,8 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
             );
-            context.read<AuthBloc>().add(const AuthLogoutEvent());
+            // Forces the redirect to login upon success
+            context.go('/login');
           }
         },
         builder: (context, state) {
@@ -199,6 +254,56 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                                       ),
                                       child: const Text('Reset Password'),
                                     ),
+                            ),
+                            
+                            const SizedBox(height: 24),
+                            
+                            // 🔥 Here is the exact Timer and Resend Button logic
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Text(
+                                  "Didn't receive the code? ",
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: (_sending || !_canResend) ? null : _resend,
+                                  style: TextButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    foregroundColor: _canResend
+                                        ? AppColors.primary
+                                        : AppColors.textMuted,
+                                  ),
+                                  child: Text(
+                                    _canResend
+                                        ? 'Resend'
+                                        : 'Resend in ${_secondsRemaining}s',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: _canResend
+                                          ? AppColors.primary
+                                          : AppColors.textMuted,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            TextButton(
+                              onPressed: () {
+                                context.read<AuthBloc>().add(const AuthLogoutEvent());
+                                context.go('/login');
+                              },
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppColors.textSecondary,
+                              ),
+                              child: const Text('Back to login'),
                             ),
                           ],
                         ),
