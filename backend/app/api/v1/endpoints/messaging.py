@@ -239,18 +239,28 @@ async def websocket_endpoint(
 
                 async with AsyncSessionLocal() as db:
                     try:
+                        from sqlalchemy import select # Ensure this is imported at the top of your file
+                        from app.models.messaging import Message
+                        
                         conv_uuid = uuid.UUID(conversation_id)
                         conv = await messaging_service.get_conversation(db, conv_uuid, user.id)
                         
-                        # 🔥 FIX: Grab the other member BEFORE the commit expires the conv object
+                        # Grab the other member before the commit
                         other_user_id = next((str(m.user_id) for m in conv.members if str(m.user_id) != user_id), None)
                         
+                        # 🔥 FIX: Explicitly fetch the replied message safely
+                        reply_to_data = None
+                        if reply_to_id:
+                            replied_msg_result = await db.execute(select(Message).where(Message.id == uuid.UUID(reply_to_id)))
+                            replied_msg = replied_msg_result.scalar_one_or_none()
+                            if replied_msg:
+                                reply_to_data = {"id": str(replied_msg.id), "content": replied_msg.content}
+
                         msg = await messaging_service.save_message(
                             db, conv_uuid, user.id, content,
                             reply_to_id=uuid.UUID(reply_to_id) if reply_to_id else None
                         )
                         await db.commit()
-                        await db.refresh(msg, ["reply_to"])
 
                         msg_dict = {
                             "id": str(msg.id),
@@ -259,11 +269,11 @@ async def websocket_endpoint(
                             "content": msg.content,
                             "status": msg.status,
                             "is_pinned": msg.is_pinned,
-                            "reply_to": {"id": str(msg.reply_to.id), "content": msg.reply_to.content} if msg.reply_to else None,
+                            "reply_to": reply_to_data, # 🔥 Use the safely extracted dictionary
                             "created_at": msg.created_at.isoformat(),
                         }
 
-                        # Send new_message to the OTHER user(s) using the safely extracted ID
+                        # Send new_message to the OTHER user(s)
                         if other_user_id:
                             delivered = await manager.send(other_user_id, {
                                 "type": "new_message",
@@ -285,7 +295,7 @@ async def websocket_endpoint(
                     except Exception as e:
                         await db.rollback()
                         await manager.send(user_id, {"type": "error", "message": str(e)})
-
+                        
             # ── Mark read ─────────────────────────────────────────────────
             elif msg_type == "mark_read":
                 conversation_id = data.get("conversation_id")

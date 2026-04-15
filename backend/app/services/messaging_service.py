@@ -138,12 +138,11 @@ class MessagingService:
             conversation_id=conversation_id,
             sender_id=sender_id,
             content=content,
-            reply_to_id=reply_to_id, # 🔥 Now linked to schema
+            reply_to_id=reply_to_id, 
             status=MessageStatus.SENT,
         )
         db.add(msg)
         await db.flush()
-        await db.refresh(msg, ["reply_to"])
         return msg
 
     async def toggle_pin(self, db: AsyncSession, message_id: uuid.UUID, user_id: uuid.UUID) -> Message:
