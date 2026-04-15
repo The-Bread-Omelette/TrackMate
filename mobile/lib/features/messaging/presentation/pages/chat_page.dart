@@ -65,13 +65,13 @@ class _ChatPageState extends State<ChatPage> {
           _pinnedMessage = pinned;
         }
       });
+      // This works successfully now since the backend 500 error was patched
       await widget.ds.markRead(widget.conversationId);
     } catch (_) {}
 
     try {
       final ticket = await widget.ds.getWsTicket();
       
-      // Clean up URL formation to prevent // errors resulting in 404
       String wsBase = ApiConstants.baseUrl.replaceFirst('http', 'ws');
       if (wsBase.endsWith('/')) wsBase = wsBase.substring(0, wsBase.length - 1);
       
@@ -112,7 +112,15 @@ class _ChatPageState extends State<ChatPage> {
               setState(() {
                 if (msg['sender_id'].toString() != widget.currentUserId.toString()) {
                   final exists = _messages.any((m) => m['id'] == msg['id']);
-                  if (!exists) _messages.add(msg);
+                  if (!exists) {
+                    _messages.add(msg);
+                    
+                    // 🔥 FIX: Instantly tell the server we read the message while we are on this screen
+                    _channel?.sink.add(jsonEncode({
+                      'type': 'mark_read',
+                      'conversation_id': widget.conversationId,
+                    }));
+                  }
                 }
               });
               _scrollToBottom();
@@ -144,7 +152,6 @@ class _ChatPageState extends State<ChatPage> {
               }
             });
           } else if (type == 'error') {
-             // Let the UI know if the backend rejected a payload
              if (mounted) {
                ScaffoldMessenger.of(context).showSnackBar(
                  SnackBar(content: Text('Server Error: ${data['message']}')),

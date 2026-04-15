@@ -98,17 +98,21 @@ async def mark_read(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    conv = await messaging_service.get_conversation(
-        db, conversation_id, current_user.id
-    )
+    # 🔥 FIX: Acknowledge read status without lazy-loading members
     await messaging_service.mark_read(db, conversation_id, current_user.id)
 
-    other_member = next(
-        (m for m in conv.members if str(m.user_id) != str(current_user.id)),
-        None,
+    other_member_query = await db.execute(
+        select(ConversationMember.user_id).where(
+            and_(
+                ConversationMember.conversation_id == conversation_id,
+                ConversationMember.user_id != current_user.id
+            )
+        )
     )
-    if other_member:
-        await manager.send(str(other_member.user_id), {
+    other_user_id = other_member_query.scalar_one_or_none()
+
+    if other_user_id:
+        await manager.send(str(other_user_id), {
             "type": "messages_read",
             "conversation_id": str(conversation_id),
             "read_by": str(current_user.id),
@@ -177,7 +181,6 @@ async def websocket_endpoint(
     await presence_service.set_online(user_id)
     await _broadcast_presence(user_id, online=True)
 
-    # Push unread summary safely
     try:
         async with AsyncSessionLocal() as db:
             memberships_result = await db.execute(
@@ -223,7 +226,6 @@ async def websocket_endpoint(
 
             msg_type = data.get("type")
 
-            # 🔥 FIX: Wrap ALL processing in a try/except to prevent the socket from dying
             try:
                 # ── Send message ──────────────────────────────────────────────
                 if msg_type == "send_message":
@@ -242,7 +244,6 @@ async def websocket_endpoint(
                     async with AsyncSessionLocal() as db:
                         conv_uuid = uuid.UUID(conversation_id)
                         
-                        # Grab the other member query-based safely (avoids MissingGreenlet errors)
                         other_member_query = await db.execute(
                             select(ConversationMember.user_id)
                             .where(and_(ConversationMember.conversation_id == conv_uuid, ConversationMember.user_id != user.id))
@@ -334,7 +335,6 @@ async def websocket_endpoint(
                             "content": msg.content
                         }
                         
-                        # Fetch members safely to notify all
                         members_query = await db.execute(
                             select(ConversationMember.user_id)
                             .where(ConversationMember.conversation_id == msg.conversation_id)
@@ -370,7 +370,6 @@ async def websocket_endpoint(
                     await manager.send(user_id, {"type": "heartbeat_ack"})
             
             except Exception as e:
-                # Catch internal processing errors to prevent dropping the socket!
                 await manager.send(user_id, {"type": "error", "message": f"Processing Error: {str(e)}"})
 
     except WebSocketDisconnect:
