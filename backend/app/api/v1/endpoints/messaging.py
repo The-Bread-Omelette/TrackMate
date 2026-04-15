@@ -221,11 +221,13 @@ async def websocket_endpoint(
 
             msg_type = data.get("type")
 
-            # ── Send message ──────────────────────────────────────────────
+            # ── Send message to Abu <3 <3 ──────────────────────────────────────────────
+          # ── Send message to Sahil<3──────────────────────────────────────────────
             if msg_type == "send_message":
                 conversation_id = data.get("conversation_id")
                 content = data.get("content", "").strip()
                 reply_to_id = data.get("reply_to_id") 
+                client_id = data.get("client_id") # 🔥 Capture the client_id from Flutter
                 
                 if not conversation_id or not content:
                     continue
@@ -246,30 +248,37 @@ async def websocket_endpoint(
                         await db.commit()
                         await db.refresh(msg, ["reply_to"])
 
-                        payload = {
-                            "type": "new_message",
-                            "message": {
-                                "id": str(msg.id),
-                                "conversation_id": str(msg.conversation_id),
-                                "sender_id": str(msg.sender_id),
-                                "content": msg.content,
-                                "status": msg.status,
-                                "is_pinned": msg.is_pinned,
-                                "reply_to": {"id": str(msg.reply_to.id), "content": msg.reply_to.content} if msg.reply_to else None,
-                                "created_at": msg.created_at.isoformat(),
-                            },
+                        # The core message dictionary
+                        msg_dict = {
+                            "id": str(msg.id),
+                            "conversation_id": str(msg.conversation_id),
+                            "sender_id": str(msg.sender_id),
+                            "content": msg.content,
+                            "status": msg.status,
+                            "is_pinned": msg.is_pinned,
+                            "reply_to": {"id": str(msg.reply_to.id), "content": msg.reply_to.content} if msg.reply_to else None,
+                            "created_at": msg.created_at.isoformat(),
                         }
 
+                        # 1. Send new_message to the OTHER user(s)
                         other = next((m for m in conv.members if str(m.user_id) != user_id), None)
                         if other:
-                            delivered = await manager.send(str(other.user_id), payload)
+                            delivered = await manager.send(str(other.user_id), {
+                                "type": "new_message",
+                                "message": msg_dict
+                            })
                             if delivered:
                                 async with AsyncSessionLocal() as db2:
                                     await messaging_service.mark_delivered(db2, msg.id)
                                     await db2.commit()
-                                payload["message"]["status"] = "delivered"
+                                msg_dict["status"] = "delivered"
 
-                        await manager.send(user_id, payload)
+                        # 🔥 2. Send the EXPLICIT ACK directly back to the sender
+                        await manager.send(user_id, {
+                            "type": "message_ack",
+                            "client_id": client_id,
+                            "message": msg_dict
+                        })
 
                     except Exception as e:
                         await db.rollback()

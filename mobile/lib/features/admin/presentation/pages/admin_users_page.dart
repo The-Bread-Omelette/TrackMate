@@ -12,23 +12,54 @@ class AdminUsersPage extends StatefulWidget {
 
 class _AdminUsersPageState extends State<AdminUsersPage> {
   final _ds = AdminRemoteDataSource(sl());
+  final ScrollController _scrollController = ScrollController();
+  
   List<dynamic> _users = [];
   bool _loading = true;
+  
+  // Infinite scrolling state
+  bool _isFetchingMore = false;
+  int _currentPage = 1;
+  bool _hasMoreData = true;
 
   @override
   void initState() {
     super.initState();
     _load();
+    
+    // Listen to scroll events to trigger the next page load
+    _scrollController.addListener(() {
+      // If we scroll within 200 pixels of the bottom, fetch more
+      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+        _loadMore();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
     if (!mounted) return;
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _currentPage = 1;
+      _hasMoreData = true;
+    });
+    
     try {
-      _users = await _ds.getUsers();
+      final fetchedUsers = await _ds.getUsers(page: _currentPage);
+      _users = fetchedUsers;
+      
+      // If the first page has fewer than 20 items, there is no more data
+      if (fetchedUsers.length < 20) {
+        _hasMoreData = false;
+      }
     } catch (e) {
       if (mounted) {
-        // FORCE ERROR TO SHOW ON SCREEN
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -43,6 +74,36 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
     }
   }
 
+  Future<void> _loadMore() async {
+    // Stop if we are already fetching, have no more data, or widget is unmounted
+    if (_isFetchingMore || !_hasMoreData || !mounted) return;
+    
+    setState(() => _isFetchingMore = true);
+    
+    try {
+      _currentPage++;
+      final moreUsers = await _ds.getUsers(page: _currentPage);
+      
+      if (moreUsers.isEmpty) {
+        _hasMoreData = false;
+      } else {
+        setState(() {
+          _users.addAll(moreUsers);
+          // If the new batch is less than 20, we've hit the end of the database
+          if (moreUsers.length < 20) _hasMoreData = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load more users: $e'))
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isFetchingMore = false);
+    }
+  }
+
   Future<void> _toggleStatus(String userId, bool activate) async {
     try {
       await _ds.toggleUserStatus(userId, activate);
@@ -51,8 +112,15 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
           content: Text(activate ? 'User Activated' : 'User Deactivated'),
           backgroundColor: activate ? Colors.green : Colors.red,
         ));
+        
+        // Optimistically update the UI without reloading the whole list
+        setState(() {
+          final index = _users.indexWhere((u) => u['id'] == userId);
+          if (index != -1) {
+            _users[index]['is_active'] = activate;
+          }
+        });
       }
-      _load();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Action failed: $e')));
@@ -64,11 +132,10 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-   appBar: AppBar(
+      appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () {
-            // 🔥 FIX: Safely navigate back. If there is no history, force a return to the dashboard.
             if (context.canPop()) {
               context.pop();
             } else {
@@ -76,7 +143,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
             }
           },
         ),
-        title: const Text('Users', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)), // Remember to keep the correct title for each page!
+        title: const Text('Users', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
         backgroundColor: AppColors.surface,
       ),
       body: _loading
@@ -86,9 +153,26 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
               child: _users.isEmpty
                   ? const Center(child: Text('No users found in system.', style: TextStyle(color: Colors.grey)))
                   : ListView.builder(
+                      controller: _scrollController,
                       padding: const EdgeInsets.all(16),
-                      itemCount: _users.length,
+                      // Add 1 to the item count to render the loading spinner at the bottom
+                      itemCount: _users.length + (_hasMoreData ? 1 : 0),
                       itemBuilder: (context, index) {
+                        
+                        // If we are rendering the extra index at the end, show the spinner
+                        if (index == _users.length) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 24.0),
+                            child: Center(
+                              child: SizedBox(
+                                width: 24, 
+                                height: 24, 
+                                child: CircularProgressIndicator(strokeWidth: 2)
+                              ),
+                            ),
+                          );
+                        }
+
                         final user = _users[index] as Map<String, dynamic>;
                         final isActive = user['is_active'] == true;
                         
