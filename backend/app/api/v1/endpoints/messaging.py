@@ -225,9 +225,13 @@ async def websocket_endpoint(
             if msg_type == "send_message":
                 conversation_id = data.get("conversation_id")
                 content = data.get("content", "").strip()
-                reply_to_id = data.get("reply_to_id") # 🔥 Check for reply reference
+                reply_to_id = data.get("reply_to_id") 
                 
                 if not conversation_id or not content:
+                    continue
+                    
+                if len(content) > 2000:
+                    await manager.send(user_id, {"type": "error", "message": "Message exceeds 2000 characters."})
                     continue
 
                 async with AsyncSessionLocal() as db:

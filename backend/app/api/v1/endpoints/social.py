@@ -2,7 +2,7 @@ import uuid
 from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 from app.db.base import get_db
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/social", tags=["Social"])
 
 
 class CreatePostRequest(BaseModel):
-    content: str
+    content: str = Field(..., min_length=1, max_length=2000, description="Post content cannot exceed 2000 characters")
 
 
 class FriendRequestResponse(BaseModel):
@@ -27,7 +27,7 @@ class ReportMessageRequest(BaseModel):
     message_id: uuid.UUID
     reported_user_id: uuid.UUID
     report_type: ReportType
-    body: str
+    body: str = Field(..., min_length=1, max_length=2000, description="Report description cannot exceed 2000 characters")
 
 
 @router.post("/friends/request/{user_id}", status_code=status.HTTP_201_CREATED)

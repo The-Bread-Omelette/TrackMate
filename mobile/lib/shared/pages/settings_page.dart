@@ -143,8 +143,36 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _save() async {
-    setState(() => _saving = true);
+    final double? h = double.tryParse(_heightCtrl.text);
+    if (h != null && (h < 50 || h > 300)) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Height must be between 50 and 300 cm'), backgroundColor: AppColors.error));
+      return;
+    }
+
     final double? w = double.tryParse(_weightCtrl.text);
+    if (w != null && (w < 20 || w > 500)) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Weight must be between 20 and 500 kg'), backgroundColor: AppColors.error));
+      return;
+    }
+
+    final int? steps = int.tryParse(_stepGoalCtrl.text);
+    if (steps != null && (steps < 1000 || steps > 100000)) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Step goal must be between 1,000 and 100,000'), backgroundColor: AppColors.error));
+      return;
+    }
+
+    final int? cals = int.tryParse(_calorieGoalCtrl.text);
+    if (cals != null && (cals < 500 || cals > 10000)) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Calorie goal must be between 500 and 10,000'), backgroundColor: AppColors.error));
+      return;
+    }
+    
+    if (_bioCtrl.text.length > 2000) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bio is too long (maximum 2000 characters)'), backgroundColor: AppColors.error));
+      return;
+    }
+
+    setState(() => _saving = true);
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -154,10 +182,10 @@ class _SettingsPageState extends State<SettingsPage> {
         'bio': _bioCtrl.text.isEmpty ? null : _bioCtrl.text,
         'gender': _gender,
         'date_of_birth': _dob?.toIso8601String(),
-        'height_cm': double.tryParse(_heightCtrl.text),
+        'height_cm': h,
         'weight_kg': w,
-        'daily_step_goal': int.tryParse(_stepGoalCtrl.text),
-        'daily_calorie_goal': int.tryParse(_calorieGoalCtrl.text),
+        'daily_step_goal': steps,
+        'daily_calorie_goal': cals,
         'activity_level': _activityLevel,
       });
 
@@ -224,7 +252,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 Text(_savedApplication!['certifications']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w500)),
                 const SizedBox(height: 32),
 
-                // 🔥 Two discrete buttons: Edit vs Withdraw
                 Row(
                   children: [
                     Expanded(
@@ -366,21 +393,33 @@ class _SettingsPageState extends State<SettingsPage> {
                         keyboardType: const TextInputType.numberWithOptions(decimal: false, signed: false),
                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                         decoration: const InputDecoration(labelText: 'Years of Experience'),
-                        validator: (val) => int.tryParse(val?.trim() ?? '') == null ? 'Must be a valid number' : null,
+                        validator: (val) {
+                          final v = int.tryParse(val?.trim() ?? '');
+                          if (v == null) return 'Must be a valid number';
+                          if (v < 0 || v > 80) return 'Experience must be 0-80 years';
+                          return null;
+                        },
                       ),
                       const SizedBox(height: 16),
 
+                      // 🔥 NEW: Explicit bounds checking for Bio length
                       TextFormField(
                         controller: aboutCtrl,
                         maxLines: 3,
-                        decoration: const InputDecoration(labelText: 'About Me (No limits)', alignLabelWithHint: true),
-                        validator: (val) => (val == null || val.trim().isEmpty) ? 'Please write a short bio' : null,
+                        maxLength: 2000,
+                        decoration: const InputDecoration(labelText: 'About Me', alignLabelWithHint: true),
+                        validator: (val) {
+                          if (val == null || val.trim().isEmpty) return 'Please write a short bio';
+                          if (val.length > 2000) return 'Bio is too long (max 2000 chars)';
+                          return null;
+                        },
                       ),
                       const SizedBox(height: 16),
 
                       if (specializations.isNotEmpty) buildTags(specializations, (tag) => specializations.remove(tag)),
                       TextFormField(
                         controller: specCtrl,
+                        maxLength: 50,
                         decoration: const InputDecoration(labelText: 'Specializations (Type comma "," to add)'),
                         onChanged: (val) {
                           if (val.endsWith(',')) {
@@ -403,6 +442,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       if (certifications.isNotEmpty) buildTags(certifications, (tag) => certifications.remove(tag)),
                       TextFormField(
                         controller: certCtrl,
+                        maxLength: 50,
                         decoration: const InputDecoration(labelText: 'Certifications (Type comma "," to add)'),
                         onChanged: (val) {
                           if (val.endsWith(',')) {
@@ -427,7 +467,12 @@ class _SettingsPageState extends State<SettingsPage> {
                         keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false), 
                         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
                         decoration: const InputDecoration(labelText: 'Hourly Rate (₹)', prefixText: '₹ '),
-                        validator: (val) => double.tryParse(val?.trim() ?? '') == null ? 'Must be a valid number' : null,
+                        validator: (val) {
+                          final v = double.tryParse(val?.trim() ?? '');
+                          if (v == null) return 'Must be a valid number';
+                          if (v < 0 || v > 100000) return 'Rate must be realistic (0 to 100,000)';
+                          return null;
+                        },
                       ),
                       const SizedBox(height: 24),
 
@@ -450,19 +495,33 @@ class _SettingsPageState extends State<SettingsPage> {
                               return;
                             }
 
+                            final String specsJoined = specializations.join(', ');
+                            final String certsJoined = certifications.join(', ');
+                            
+                            if (specsJoined.length > 500) {
+                              setModalState(() { autoValidate = true; });
+                              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Specializations list is too long (max 500 chars)'), backgroundColor: AppColors.error));
+                              return;
+                            }
+                            
+                            if (certsJoined.length > 500) {
+                              setModalState(() { autoValidate = true; });
+                              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Certifications list is too long (max 500 chars)'), backgroundColor: AppColors.error));
+                              return;
+                            }
+
                             setModalState(() { isSubmitting = true; });
 
                             final payload = {
                               'phone_number': '+91${phoneCtrl.text.trim()}',
                               'experience_years': int.tryParse(expCtrl.text.trim()),
                               'about': aboutCtrl.text.trim(),
-                              'specializations': specializations.join(', '),
-                              'certifications': certifications.join(', '),
+                              'specializations': specsJoined,
+                              'certifications': certsJoined,
                               'hourly_rate': double.tryParse(rateCtrl.text.trim()),
                             };
 
                             try {
-                              // 🔥 Route logic based on isUpdating flag
                               if (isUpdating) {
                                 await _dio.put('/api/v1/trainer/application', data: payload);
                               } else {
@@ -546,7 +605,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
             _header('Profile'),
             _card([
-              _inputTile('Bio', _bioCtrl, maxLines: 2),
+              _inputTile('Bio', _bioCtrl, maxLines: 2, maxLength: 2000),
               _dropdownTile('Gender', _gender, _genders, (v) => setState(() => _gender = v)),
               _dateTile(context),
             ]),
@@ -682,12 +741,13 @@ class _SettingsPageState extends State<SettingsPage> {
     trailing: Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
   );
 
-  Widget _inputTile(String label, TextEditingController ctrl, {int maxLines = 1, bool isNumber = false}) =>
+  Widget _inputTile(String label, TextEditingController ctrl, {int maxLines = 1, bool isNumber = false, int? maxLength}) =>
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: TextField(
             controller: ctrl,
             maxLines: maxLines,
+            maxLength: maxLength,
             keyboardType: isNumber ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
             decoration: InputDecoration(labelText: label)),
       );

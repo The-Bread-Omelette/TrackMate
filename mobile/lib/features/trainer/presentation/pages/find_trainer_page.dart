@@ -99,6 +99,7 @@ class _FindTrainerPageState extends State<FindTrainerPage> {
             TextField(
               controller: goalCtrl,
               maxLines: 3,
+              maxLength: 1000,
               decoration: const InputDecoration(
                 hintText: 'What are your fitness goals?',
                 border: OutlineInputBorder(),

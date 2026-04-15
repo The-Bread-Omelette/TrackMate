@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, Field
 from typing import Optional
 import uuid
 from app.models.user import UserRole, TrainerStatus
@@ -6,10 +6,8 @@ from app.models.user import UserRole, TrainerStatus
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str
-    full_name: str
-    # role is NOT accepted from client — everyone registers as trainee
-    # set apply_as_trainer=True to enter the trainer approval queue
+    password: str = Field(..., max_length=128)
+    full_name: str = Field(..., min_length=2, max_length=255)
     apply_as_trainer: bool = False
 
     @field_validator('email')
@@ -39,13 +37,12 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(..., max_length=128)
     
     @field_validator('email')
     @classmethod
     def email_to_lower(cls, v: str) -> str:
         return v.lower()
-    # No role field — role is derived from DB
 
     
 class UserResponse(BaseModel):
@@ -80,7 +77,7 @@ class ResendVerificationRequest(BaseModel):
     
 class VerifyEmailRequest(BaseModel):
     email: EmailStr
-    otp: str
+    otp: str = Field(..., min_length=6, max_length=6)
     @field_validator('email')
     @classmethod
     def email_to_lower(cls, v: str) -> str:
@@ -103,8 +100,9 @@ class ForgotPasswordRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     email: EmailStr
-    otp: str
-    new_password: str
+    otp: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., max_length=128)
+    
     @field_validator('email')
     @classmethod
     def email_to_lower(cls, v: str) -> str:

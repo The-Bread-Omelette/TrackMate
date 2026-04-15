@@ -18,7 +18,7 @@ router = APIRouter(prefix="/profile", tags=["Profile"])
     summary="Search users by name or email",
 )
 async def search_users(
-    q: str = Query(..., min_length=2),
+    q: str = Query(..., min_length=2, max_length=50),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[UserResponse]:

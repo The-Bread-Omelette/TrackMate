@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, Field
 from typing import Optional
 from datetime import datetime
 import uuid
@@ -6,16 +6,18 @@ from app.models.profile import Gender, ActivityLevel
 
 
 class ProfileUpdateRequest(BaseModel):
-    bio: Optional[str] = None
+    bio: Optional[str] = Field(default=None, max_length=2000)
     date_of_birth: Optional[datetime] = None
     gender: Optional[Gender] = None
+    phone_number: Optional[str] = Field(default=None, max_length=20)
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
     daily_step_goal: Optional[int] = None
     daily_calorie_goal: Optional[int] = None
     activity_level: Optional[ActivityLevel] = None
-    specializations: Optional[str] = None
+    specializations: Optional[str] = Field(default=None, max_length=500)
     experience_years: Optional[int] = None
+    hourly_rate: Optional[float] = None
 
     @field_validator("height_cm")
     @classmethod
@@ -44,11 +46,26 @@ class ProfileUpdateRequest(BaseModel):
         if v is not None and not (500 <= v <= 10000):
             raise ValueError("Calorie goal must be between 500 and 10000")
         return v
+        
+    @field_validator("experience_years")
+    @classmethod
+    def validate_experience(cls, v: int | None) -> int | None:
+        if v is not None and not (0 <= v <= 80):
+            raise ValueError("Experience years must be between 0 and 80")
+        return v
+
+    @field_validator("hourly_rate")
+    @classmethod
+    def validate_hourly_rate(cls, v: float | None) -> float | None:
+        if v is not None and not (0 <= v <= 100000):
+            raise ValueError("Hourly rate must be realistic (0 to 100000)")
+        return v
 
 
 class ProfileResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
+    phone_number: Optional[str] = None
     profile_image_url: Optional[str]
     bio: Optional[str]
     date_of_birth: Optional[datetime]
@@ -60,6 +77,7 @@ class ProfileResponse(BaseModel):
     activity_level: Optional[ActivityLevel]
     specializations: Optional[str]
     experience_years: Optional[int]
+    hourly_rate: Optional[float] = None
     tdee: Optional[float] = None # calculated, not stored
     created_at: datetime
     updated_at: datetime

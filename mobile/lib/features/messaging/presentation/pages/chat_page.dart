@@ -295,9 +295,11 @@ class _ChatPageState extends State<ChatPage> {
                 Expanded(
                   child: TextField(
                     controller: _inputCtrl,
+                    maxLength: 2000,
                     onChanged: (_) => _sendTyping(),
                     onSubmitted: (_) => _send(),
                     decoration: InputDecoration(
+                      counterText: '',
                       hintText: 'Type a message...',
                       filled: true,
                       fillColor: AppColors.background,

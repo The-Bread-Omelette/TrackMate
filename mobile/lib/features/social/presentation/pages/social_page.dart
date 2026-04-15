@@ -236,7 +236,9 @@ class _FeedTab extends StatelessWidget {
                 TextField(
                   controller: postCtrl,
                   maxLines: 3,
+                  maxLength: 2000,
                   decoration: const InputDecoration(
+                    counterText: '',
                     hintText: "What's on your mind?",
                     border: InputBorder.none,
                   ),

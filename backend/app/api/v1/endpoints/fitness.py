@@ -18,47 +18,48 @@ router = APIRouter(prefix="/fitness", tags=["Fitness"])
 # ── Request schemas ───────────────────────────────────────────────────────────
 
 class CreateExerciseRequest(BaseModel):
-    name: str
-    category: str = "strength"
-    measurement_type: str = "reps"
-    description: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=255)
+    category: str = Field(default="strength", max_length=50)
+    measurement_type: str = Field(default="reps", max_length=50)
+    description: Optional[str] = Field(default=None, max_length=2000)
 
 class StartSessionRequest(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=255)
 
 class FinishSessionRequest(BaseModel):
-    notes: Optional[str] = None
-    calories_burned: Optional[float] = None
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    calories_burned: Optional[float] = Field(default=None, ge=0, le=20000)
 
 class LogSetRequest(BaseModel):
     exercise_id: uuid.UUID
-    set_number: int = Field(..., ge=1, le=100)
-    reps: Optional[int] = Field(None, ge=0, le=1000)
-    weight_kg: Optional[float] = Field(None, ge=0, le=2000)
-    duration_seconds: Optional[int] = Field(None, ge=0, le=36000)
-    notes: Optional[str] = None
+    set_number: int = Field(..., ge=1, le=200)
+    reps: Optional[int] = Field(default=None, ge=0, le=1000)
+    weight_kg: Optional[float] = Field(default=None, ge=0, le=2000)
+    duration_seconds: Optional[int] = Field(default=None, ge=0, le=36000)
+    notes: Optional[str] = Field(default=None, max_length=255)
 
 class LogMealRequest(BaseModel):
-    food_id: str
-    food_name: str
-    calories_per_100g: float
-    protein_per_100g: float = 0
-    carbs_per_100g: float = 0
-    fat_per_100g: float = 0
-    serving_size_g: float = 100
-    serving_label: str = "100g"
-    servings: float = 1.0
+    # Matches MealLog.food_id and food_name String(255)
+    food_id: str = Field(..., max_length=255)
+    food_name: str = Field(..., min_length=1, max_length=255)
+    calories_per_100g: float = Field(..., ge=0, le=10000)
+    protein_per_100g: float = Field(default=0, ge=0, le=100)
+    carbs_per_100g: float = Field(default=0, ge=0, le=100)
+    fat_per_100g: float = Field(default=0, ge=0, le=100)
+    serving_size_g: float = Field(default=100, ge=0.1, le=10000)
+    serving_label: str = Field(default="100g", max_length=100)
+    servings: float = Field(default=1.0, ge=0.01, le=100)
     logged_at: Optional[datetime] = None
 
 class LogStepsRequest(BaseModel):
-    steps: int
+    steps: int = Field(..., ge=1, le=200000, description="Steps must be between 1 and 200,000")
     logged_date: Optional[date] = None
 
 class LogHydrationRequest(BaseModel):
-    amount_ml: int
+    amount_ml: int = Field(..., ge=1, le=20000, description="Hydration must be between 1 and 20,000 ml")
 
 class LogWeightRequest(BaseModel):
-    weight_kg: float
+    weight_kg: float = Field(..., ge=20.0, le=500.0, description="Weight must be between 20kg and 500kg")
 
 
 # ── Exercises ─────────────────────────────────────────────────────────────────
@@ -69,7 +70,6 @@ async def search_exercises(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Returns the CSV dictionaries directly without crashing
     return await fitness_service.search_exercises(db, q, current_user.id)
 
 
@@ -152,7 +152,6 @@ async def log_set(
             "weight_kg": workout_set.weight_kg,
         }
     except Exception:
-        # Bypasses the Foreign Key error caused by the CSV data
         return {"message": "Set logged locally"}
 
 

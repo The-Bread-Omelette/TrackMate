@@ -121,7 +121,7 @@ class _RegisterPageState extends State<RegisterPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             
-
+                            // 🔥 Explicit frontend constraints matching the Pydantic schema
                             TmTextField(
                               label: 'Full Name',
                               hint: 'John Doe',
@@ -130,6 +130,7 @@ class _RegisterPageState extends State<RegisterPage> {
                               validator: (v) {
                                 if (v == null || v.trim().isEmpty) return 'Name is required';
                                 if (v.trim().length < 2) return 'Name must be at least 2 characters';
+                                if (v.trim().length > 255) return 'Name must be under 255 characters';
                                 return null;
                               },
                             ),
@@ -144,6 +145,7 @@ class _RegisterPageState extends State<RegisterPage> {
                               validator: (v) {
                                 if (v == null || v.isEmpty) return 'Email is required';
                                 if (!v.contains('@')) return 'Enter a valid email';
+                                if (v.length > 255) return 'Email is too long';
                                 return null;
                               },
                             ),
@@ -157,6 +159,7 @@ class _RegisterPageState extends State<RegisterPage> {
                               validator: (v) {
                                 if (v == null || v.isEmpty) return 'Password is required';
                                 if (v.length < 8) return 'Minimum 8 characters';
+                                if (v.length > 128) return 'Password must be under 128 characters';
                                 if (!v.contains(RegExp(r'[A-Z]'))) return 'Must contain an uppercase letter';
                                 if (!v.contains(RegExp(r'[0-9]'))) return 'Must contain a digit';
                                 return null;
@@ -230,7 +233,7 @@ class _RegisterPageState extends State<RegisterPage> {
                           'Sign in',
                           style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                         ),
-)
+                      )
                       ],
                     ),
                   ],
