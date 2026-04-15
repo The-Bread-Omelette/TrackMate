@@ -80,14 +80,43 @@ class _ChatPageState extends State<ChatPage> {
         (raw) {
           final data = jsonDecode(raw as String) as Map<String, dynamic>;
           final type = data['type'] as String?;
-
-          if (type == 'new_message') {
-            final msg = data['message'] as Map<String, dynamic>;
-            if (msg['conversation_id'] == widget.conversationId) {
-              setState(() => _messages.add(msg));
+// 🔥 NEW: Explicitly handle the acknowledgment of YOUR messages
+          if (type == 'message_ack') {
+            final clientId = data['client_id'];
+            final savedMsg = Map<String, dynamic>.from(data['message'] as Map);
+            
+            setState(() {
+              // Find our optimistic message by its client ID
+              final idx = _messages.indexWhere((m) => m['id'] == clientId || m['client_id'] == clientId);
+              
+              if (idx != -1) {
+                // Restore the reply box if the backend didn't echo it back perfectly
+                if (savedMsg['reply_to'] == null && _messages[idx]['reply_to'] != null) {
+                  savedMsg['reply_to'] = _messages[idx]['reply_to'];
+                }
+                
+                // Swap the fake 'local_' ID with the real UUID from the database
+                savedMsg['status'] = savedMsg['status'] == 'delivered' ? 'delivered' : 'sent';
+                
+                // Replace the temporary message entirely
+                _messages[idx] = savedMsg; 
+              }
+            });
+            _scrollToBottom();
+            
+          } else if (type == 'new_message') {
+            final msg = Map<String, dynamic>.from(data['message'] as Map);
+            
+            if (msg['conversation_id'].toString() == widget.conversationId.toString()) {
+              setState(() {
+                if (msg['sender_id'].toString() != widget.currentUserId.toString()) {
+                  final exists = _messages.any((m) => m['id'] == msg['id']);
+                  if (!exists) _messages.add(msg);
+                }
+              });
               _scrollToBottom();
             }
-          } else if (type == 'message_pinned') {
+          }else if (type == 'message_pinned') {
             setState(() {
               final idx = _messages.indexWhere((m) => m['id'] == data['message_id']);
               if (idx != -1) {
@@ -115,7 +144,6 @@ class _ChatPageState extends State<ChatPage> {
             });
           }
         },
-// 🔥 ADD "if (mounted)" TO THESE TWO LINES:
         onDone: () { if (mounted) setState(() => _connected = false); },
         onError: (_) { if (mounted) setState(() => _connected = false); },
       );
@@ -124,19 +152,49 @@ class _ChatPageState extends State<ChatPage> {
     _scrollToBottom();
   }
 
-  void _send() {
+ void _send() {
     final text = _inputCtrl.text.trim();
     if (text.isEmpty || _channel == null) return;
+
+    final currentReplyTo = _replyingTo;
     
-    _channel!.sink.add(jsonEncode({
-      'type': 'send_message',
+    // 🔥 Generate a unique client-side ID
+    final clientId = 'local_${DateTime.now().millisecondsSinceEpoch}';
+
+    // 1. Create the optimistic temporary message
+    final tempMessage = {
+      'id': clientId, // Use it temporarily for the UI list
+      'client_id': clientId, // Store it explicitly
+      'sender_id': widget.currentUserId,
       'conversation_id': widget.conversationId,
       'content': text,
-      'reply_to_id': _replyingTo?['id'],
-    }));
-    
-    setState(() => _replyingTo = null);
+      'created_at': DateTime.now().toUtc().toIso8601String(),
+      'status': 'sending', 
+      'reply_to': currentReplyTo != null ? Map<String, dynamic>.from(currentReplyTo) : null,
+      'is_pinned': false,
+    };
+
+    // 2. Instantly update UI and clear input
+    setState(() {
+      _messages.add(tempMessage);
+      _replyingTo = null; // Clear the reply box immediately
+    });
+    _scrollToBottom();
     _inputCtrl.clear();
+
+    // 3. Build payload safely
+    final payload = <String, dynamic>{
+      'type': 'send_message',
+      'client_id': clientId, // 🔥 Send it to the backend
+      'conversation_id': widget.conversationId,
+      'content': text,
+    };
+    
+    if (currentReplyTo != null && currentReplyTo['id'] != null) {
+      payload['reply_to_id'] = currentReplyTo['id'];
+    }
+
+    _channel!.sink.add(jsonEncode(payload));
   }
 
   void _pin(String messageId) {
@@ -260,7 +318,7 @@ class _ChatPageState extends State<ChatPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
-                      mainAxisSize: MainAxisSize.min, // 🔥 CRITICAL FIX: Stops the layout crash
+                      mainAxisSize: MainAxisSize.min, 
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
@@ -350,8 +408,17 @@ class _MessageBubble extends StatelessWidget {
     final replyTo = message['reply_to'];
     final isPinned = message['is_pinned'] == true;
 
+    IconData getStatusIcon() {
+      if (status == 'sending') return Icons.schedule;
+      if (status == 'read') return Icons.done_all;
+      if (status == 'delivered') return Icons.done_all;
+      return Icons.done;
+    }
+
     return GestureDetector(
-      onLongPress: () => _showMenu(context),
+      onLongPress: () {
+        if (status != 'sending') _showMenu(context);
+      },
       child: Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Align(
@@ -372,10 +439,9 @@ class _MessageBubble extends StatelessWidget {
                 border: isMe ? null : Border.all(color: AppColors.border),
               ),
               child: Column(
-                mainAxisSize: MainAxisSize.min, // 🔥 CRITICAL FIX
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  
                   if (replyTo != null)
                     Container(
                       width: double.infinity,
@@ -422,11 +488,7 @@ class _MessageBubble extends StatelessWidget {
                       if (isMe) ...[
                         const SizedBox(width: 4),
                         Icon(
-                          status == 'read'
-                              ? Icons.done_all
-                              : status == 'delivered'
-                                  ? Icons.done_all
-                                  : Icons.done,
+                          getStatusIcon(),
                           size: 12,
                           color: status == 'read'
                               ? Colors.lightBlueAccent

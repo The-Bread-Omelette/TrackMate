@@ -6,7 +6,7 @@ class MessagingRemoteDataSource {
   final Dio dio;
   MessagingRemoteDataSource(this.dio);
 
-// Fetches the inbox list
+  // Fetches the inbox list
   Future<List<dynamic>> getConversations() async {
     try {
       final res = await dio.get(ApiConstants.conversations);
