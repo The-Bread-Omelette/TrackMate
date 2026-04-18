@@ -55,6 +55,15 @@ class _SettingsPageState extends State<SettingsPage> {
     'extra_active'
   ];
 
+  static const List<String> _preMadeSpecialities = [
+    'Weight Loss', 'Muscle Gain', 'Bodybuilding', 'Powerlifting', 'CrossFit',
+    'Yoga', 'Pilates', 'HIIT', 'Calisthenics', 'Marathon Training', 'Boxing',
+    'MMA', 'Nutrition Coaching', 'Injury Rehabilitation', 'Senior Fitness',
+    'Pre-natal Fitness', 'Post-natal Fitness', 'Mobility & Flexibility',
+    'Kettlebell Training', 'TRX', 'Swimming', 'Cycling', 'Endurance Training',
+    'Functional Training', 'Athletic Performance', 'Power & Agility'
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -166,7 +175,7 @@ class _SettingsPageState extends State<SettingsPage> {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Calorie goal must be between 500 and 10,000'), backgroundColor: AppColors.error));
       return;
     }
-    
+
     if (_bioCtrl.text.length > 2000) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bio is too long (maximum 2000 characters)'), backgroundColor: AppColors.error));
       return;
@@ -208,7 +217,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   void _showApplicationDetails(BuildContext context) {
     if (_savedApplication == null) return;
-    
+
     bool isWithdrawing = false;
 
     showModalBottomSheet(
@@ -216,124 +225,131 @@ class _SettingsPageState extends State<SettingsPage> {
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
-        builder: (BuildContext context, StateSetter setModalState) {
-          return Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Your Application', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-                      child: const Text('Pending Review', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12)),
-                    )
-                  ],
-                ),
-                const SizedBox(height: 24),
-                _infoTile('Phone Number', _savedApplication!['phone_number']?.toString() ?? ''),
-                _infoTile('Experience', '${_savedApplication!['experience_years']} years'),
-                _infoTile('Hourly Rate', '₹${_savedApplication!['hourly_rate']}'),
-                const SizedBox(height: 12),
-                const Text('About You', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-                const SizedBox(height: 4),
-                Text(_savedApplication!['about']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w500)),
-                const SizedBox(height: 16),
-                const Text('Specializations', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-                const SizedBox(height: 4),
-                Text(_savedApplication!['specializations']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w500)),
-                const SizedBox(height: 16),
-                const Text('Certifications', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-                const SizedBox(height: 4),
-                Text(_savedApplication!['certifications']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w500)),
-                const SizedBox(height: 32),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.edit, color: AppColors.primary, size: 20),
-                        label: const Text('Edit', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
-                        style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.primary), padding: const EdgeInsets.symmetric(vertical: 14)),
-                        onPressed: isWithdrawing ? null : () {
-                          Navigator.pop(ctx);
-                          _showTrainerApplicationDialog(context, existingData: _savedApplication);
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: isWithdrawing 
-                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.error)) 
-                            : const Icon(Icons.delete_outline, color: AppColors.error, size: 20),
-                        label: const Text('Withdraw', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
-                        style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.error), padding: const EdgeInsets.symmetric(vertical: 14)),
-                        onPressed: isWithdrawing ? null : () async {
-                          setModalState(() { isWithdrawing = true; });
-                          try {
-                            await _dio.delete('/api/v1/trainer/application');
-                            final prefs = await SharedPreferences.getInstance();
-                            await prefs.remove('trainer_application');
-                            
-                            setState(() { _savedApplication = null; });
-                            if (ctx.mounted) Navigator.pop(ctx);
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Application withdrawn successfully.')));
-                            }
-                          } catch (e) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to withdraw application.'), backgroundColor: AppColors.error));
-                            }
-                            setModalState(() { isWithdrawing = false; });
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: isWithdrawing ? null : () => Navigator.pop(ctx),
-                    child: const Text('Close Window'),
+          builder: (BuildContext context, StateSetter setModalState) {
+            return Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Your Application', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+                        child: const Text('Pending Review', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12)),
+                      )
+                    ],
                   ),
-                ),
-              ],
-            ),
-          );
-        }
+                  const SizedBox(height: 24),
+                  _infoTile('Phone Number', _savedApplication!['phone_number']?.toString() ?? ''),
+                  _infoTile('Experience', '${_savedApplication!['experience_years']} years'),
+                  _infoTile('Hourly Rate', '₹${_savedApplication!['hourly_rate']}'),
+                  const SizedBox(height: 12),
+                  const Text('About You', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  Text(_savedApplication!['about']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 16),
+                  const Text('Specializations', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  Text(_savedApplication!['specializations']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 16),
+                  const Text('Certifications', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  Text(_savedApplication!['certifications']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 32),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.edit, color: AppColors.primary, size: 20),
+                          label: const Text('Edit', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+                          style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.primary), padding: const EdgeInsets.symmetric(vertical: 14)),
+                          onPressed: isWithdrawing ? null : () {
+                            Navigator.pop(ctx);
+                            _showTrainerApplicationDialog(context, existingData: _savedApplication);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: isWithdrawing
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.error))
+                              : const Icon(Icons.delete_outline, color: AppColors.error, size: 20),
+                          label: const Text('Withdraw', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
+                          style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.error), padding: const EdgeInsets.symmetric(vertical: 14)),
+                          onPressed: isWithdrawing ? null : () async {
+                            setModalState(() { isWithdrawing = true; });
+                            try {
+                              await _dio.delete('/api/v1/trainer/application');
+                              final prefs = await SharedPreferences.getInstance();
+                              await prefs.remove('trainer_application');
+
+                              setState(() { _savedApplication = null; });
+                              if (ctx.mounted) Navigator.pop(ctx);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Application withdrawn successfully.')));
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to withdraw application.'), backgroundColor: AppColors.error));
+                              }
+                              setModalState(() { isWithdrawing = false; });
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: isWithdrawing ? null : () => Navigator.pop(ctx),
+                      child: const Text('Close Window'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
       ),
     );
   }
 
   Future<void> _showTrainerApplicationDialog(BuildContext context, {Map<String, dynamic>? existingData}) async {
     final bool isUpdating = existingData != null;
-    
+
     final phoneCtrl = TextEditingController(text: existingData?['phone_number']?.toString().replaceAll('+91', '') ?? '');
     final expCtrl = TextEditingController(text: existingData?['experience_years']?.toString() ?? '');
     final aboutCtrl = TextEditingController(text: existingData?['about']?.toString() ?? '');
     final rateCtrl = TextEditingController(text: existingData?['hourly_rate']?.toString() ?? '');
 
+    // Fully web-safe array parsing to avoid dartx.where errors
     List<String> specializations = [];
-    if (existingData?['specializations'] != null) {
-      specializations = (existingData!['specializations'] as String).split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (existingData != null && existingData['specializations'] != null) {
+      final parts = existingData['specializations'].toString().split(',');
+      for (var part in parts) {
+        final val = part.trim();
+        if (val.isNotEmpty) specializations.add(val);
+      }
     }
 
     List<String> certifications = [];
-    if (existingData?['certifications'] != null) {
-      certifications = (existingData!['certifications'] as String).split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (existingData != null && existingData['certifications'] != null) {
+      final parts = existingData['certifications'].toString().split(',');
+      for (var part in parts) {
+        final val = part.trim();
+        if (val.isNotEmpty) certifications.add(val);
+      }
     }
 
-    final specCtrl = TextEditingController();
     final certCtrl = TextEditingController();
-
     final formKey = GlobalKey<FormState>();
     bool autoValidate = false;
     bool isSubmitting = false;
@@ -416,18 +432,20 @@ class _SettingsPageState extends State<SettingsPage> {
                       const SizedBox(height: 16),
 
                       if (specializations.isNotEmpty) buildTags(specializations, (tag) => specializations.remove(tag)),
-                      TextFormField(
-                        controller: specCtrl,
-                        maxLength: 50,
-                        decoration: const InputDecoration(labelText: 'Specializations (Type comma "," to add)'),
-                        onChanged: (val) {
-                          if (val.endsWith(',')) {
-                            final tag = val.substring(0, val.length - 1).trim();
-                            if (tag.isNotEmpty && !specializations.contains(tag)) {
-                              setModalState(() { specializations.add(tag); specCtrl.clear(); });
-                            } else {
-                              specCtrl.clear();
-                            }
+                      DropdownButtonFormField<String>(
+                        value: null,
+                        decoration: const InputDecoration(labelText: 'Select Specializations'),
+                        items: _preMadeSpecialities.map((String s) {
+                          return DropdownMenuItem<String>(
+                            value: s,
+                            child: Text(s),
+                          );
+                        }).toList(),
+                        onChanged: (String? val) {
+                          if (val != null && !specializations.contains(val)) {
+                            setModalState(() {
+                              specializations.add(val);
+                            });
                           }
                         },
                       ),
@@ -463,7 +481,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
                       TextFormField(
                         controller: rateCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false), 
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false),
                         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
                         decoration: const InputDecoration(labelText: 'Hourly Rate (₹)', prefixText: '₹ '),
                         validator: (val) {
@@ -480,10 +498,6 @@ class _SettingsPageState extends State<SettingsPage> {
                         height: 50,
                         child: ElevatedButton(
                           onPressed: isSubmitting ? null : () async {
-                            if (specCtrl.text.trim().isNotEmpty) {
-                              if (!specializations.contains(specCtrl.text.trim())) specializations.add(specCtrl.text.trim());
-                              specCtrl.clear();
-                            }
                             if (certCtrl.text.trim().isNotEmpty) {
                               if (!certifications.contains(certCtrl.text.trim())) certifications.add(certCtrl.text.trim());
                               certCtrl.clear();
@@ -496,13 +510,13 @@ class _SettingsPageState extends State<SettingsPage> {
 
                             final String specsJoined = specializations.join(', ');
                             final String certsJoined = certifications.join(', ');
-                            
+
                             if (specsJoined.length > 500) {
                               setModalState(() { autoValidate = true; });
                               if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Specializations list is too long (max 500 chars)'), backgroundColor: AppColors.error));
                               return;
                             }
-                            
+
                             if (certsJoined.length > 500) {
                               setModalState(() { autoValidate = true; });
                               if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Certifications list is too long (max 500 chars)'), backgroundColor: AppColors.error));
@@ -526,7 +540,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               } else {
                                 await _dio.post(ApiConstants.trainerApply, data: payload);
                               }
-                              
+
                               final prefs = await SharedPreferences.getInstance();
                               await prefs.setString('trainer_application', jsonEncode(payload));
 
@@ -536,7 +550,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                  content: Text(isUpdating ? 'Application updated!' : 'Application submitted! Admin will review it.')
+                                    content: Text(isUpdating ? 'Application updated!' : 'Application submitted! Admin will review it.')
                                 ));
                               }
                             } on DioException catch (e) {
@@ -544,7 +558,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                 final prefs = await SharedPreferences.getInstance();
                                 await prefs.setString('trainer_application', jsonEncode(payload));
                                 setState(() { _savedApplication = payload; });
-                                
+
                                 if (ctx.mounted) Navigator.pop(ctx);
 
                                 if (context.mounted) {
@@ -564,7 +578,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               }
                             }
                           },
-                          child: isSubmitting 
+                          child: isSubmitting
                               ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                               : Text(isUpdating ? 'Save Changes' : 'Submit Application', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                         ),
@@ -609,7 +623,7 @@ class _SettingsPageState extends State<SettingsPage> {
               _dateTile(context),
             ]),
             const SizedBox(height: 20),
-            
+
             // ── TRAINER ONLY: PROFESSIONAL INFORMATION ───────────────────────
             if (isTrainer) ...[
               Row(

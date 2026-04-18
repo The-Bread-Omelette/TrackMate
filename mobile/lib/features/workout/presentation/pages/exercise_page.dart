@@ -249,14 +249,35 @@ class _ExercisePageState extends State<ExercisePage> {
             _WeightLogCard(
               controller: _weightCtrl,
               onLog: () async {
-                final w = double.tryParse(_weightCtrl.text);
-                if (w == null) return;
+                final text = _weightCtrl.text.trim();
+
+                if (text.isEmpty) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a weight.'), backgroundColor: AppColors.error));
+                  return;
+                }
+
+                final w = double.tryParse(text);
+
+                // If it's null, it means it contained letters or invalid characters
+                if (w == null) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a valid numeric weight.'), backgroundColor: AppColors.error));
+                  return;
+                }
+
+                // Check constraints (must be strictly greater than 0, up to 500)
+                if (w <= 0 || w > 500) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Weight must be between 0 and 500 kg.'), backgroundColor: AppColors.error));
+                  return;
+                }
+
                 try {
                   await sl<Dio>().post('/api/v1/fitness/weight', data: {'weight_kg': w});
                   _weightCtrl.clear();
-                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Weight logged')));
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Weight logged successfully')));
                   _load();
-                } catch (_) {}
+                } catch (_) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to log weight. Please try again.'), backgroundColor: AppColors.error));
+                }
               },
             ),
           ],
@@ -443,7 +464,7 @@ class _GymSessionPageState extends State<GymSessionPage> {
 
   bool _starting = false;
   bool _finishing = false;
-  
+
   double _totalCaloriesBurned = 0.0;
 
   late DateTime _sessionStartTime;
@@ -490,10 +511,10 @@ class _GymSessionPageState extends State<GymSessionPage> {
     }
 
     final double multiplier = (_selectedExercise!['multiplier'] as num?)?.toDouble() ?? 3.0;
-    final double activeMinutes = isTime ? (duration! / 60.0) : ((reps! * 4.0) / 60.0); 
-    
+    final double activeMinutes = isTime ? (duration! / 60.0) : ((reps! * 4.0) / 60.0);
+
     final double setCalories = multiplier * widget.userWeightKg * activeMinutes * 0.0175;
-    
+
     _totalCaloriesBurned += setCalories;
 
     final newSet = {
@@ -535,11 +556,31 @@ class _GymSessionPageState extends State<GymSessionPage> {
 
   Future<void> _finish() async {
     if (_sessionId == null) return;
+
+    // Stop them from finishing if no sets have been logged
+    if (_sets.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please log at least one set before finishing.')),
+        );
+      }
+      return;
+    }
+
     setState(() => _finishing = true);
     try {
-      final diff = DateTime.now().difference(_sessionStartTime);
-      final int mins = diff.inMinutes;
-      final int secs = diff.inSeconds % 60;
+      int totalSeconds = 0;
+      for (var set in _sets) {
+        if (set['isTime'] == true) {
+          totalSeconds += (set['duration_seconds'] as int?) ?? 0;
+        } else {
+          int reps = (set['reps'] as int?) ?? 0;
+          totalSeconds += reps * 4;
+        }
+      }
+
+      final int mins = totalSeconds ~/ 60;
+      final int secs = totalSeconds % 60;
       final String durationStr = "${mins}m ${secs}s";
 
       final double calories = _totalCaloriesBurned;
@@ -551,6 +592,7 @@ class _GymSessionPageState extends State<GymSessionPage> {
       );
       if (mounted) Navigator.pop(context);
     } catch (_) {}
+
     if (mounted) setState(() => _finishing = false);
   }
 
