@@ -11,7 +11,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../trainer/data/trainer_remote_datasource.dart';
 import '../../../trainer/presentation/pages/coaching_hub_page.dart';
-
+import '../../../../features/notifications/presentation/bloc/notification_badge_cubit.dart';
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
 
@@ -155,7 +155,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final data = await _ds.getNotifications();
       final allNotifications = (data['notifications'] as List?) ?? [];
 
-      // 🔥 UPDATED: Filter notifications based on preferences
+      // Filter notifications based on preferences
       final filteredNotifications = allNotifications.where((n) {
         final type = (n as Map<String, dynamic>)['type'] as String? ?? '';
         return _isNotificationEnabled(type);
@@ -168,6 +168,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
         _notifications = filteredNotifications;
         _unreadCount = visibleUnreadCount;
       });
+
+      // 🔥 ADD THIS ONE LINE: Syncs local unread count with the global drawer badge
+      sl<NotificationBadgeCubit>().updateCount(visibleUnreadCount);
+      
     } catch (_) {}
     setState(() => _loading = false);
   }

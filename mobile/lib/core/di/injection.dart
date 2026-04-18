@@ -15,7 +15,7 @@ import '../../features/trainer/data/trainer_remote_datasource.dart';
 import '../../features/social/data/social_remote_datasource.dart';
 import '../../features/notifications/data/notifications_remote_datasource.dart';
 import '../../features/messaging/data/messaging_remote_datasource.dart';
-
+import '../../features/notifications/presentation/bloc/notification_badge_cubit.dart';
 final sl = GetIt.instance;
 
 Future<void> setupDependencies() async {
@@ -69,5 +69,8 @@ Future<void> setupDependencies() async {
 
   sl.registerLazySingleton<MessagingRemoteDataSource>(
     () => MessagingRemoteDataSource(sl<Dio>()),
+  );
+  sl.registerLazySingleton<NotificationBadgeCubit>(
+    () => NotificationBadgeCubit(sl<NotificationsRemoteDataSource>()),
   );
 }
