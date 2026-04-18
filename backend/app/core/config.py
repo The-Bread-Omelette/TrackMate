@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
     RESEND_API_KEY: str = ""
     firebase_credentials_json: Optional[str] = None
+    
+    GEMINI_API_KEY: Optional[str] = None
 
     @property
     def cors_origins_list(self) -> List[str]:

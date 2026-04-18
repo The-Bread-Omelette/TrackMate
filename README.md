@@ -119,7 +119,7 @@ In your web service's **Environment** tab, add the following variables:
 DATABASE_URL=<Internal PostgreSQL URL from Step 1 — use postgresql+asyncpg:// scheme>
 
 # JWT
-SECRET_KEY=<a random string, minimum 32 characters>
+SECRET_KEY=your-secret-key-change-in-production-min-32-chars
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 REFRESH_TOKEN_EXPIRE_DAYS=7
@@ -143,10 +143,18 @@ EMAIL_FROM=you@gmail.com
 EMAIL_FROM_NAME=TrackMate
 FRONTEND_URL=https://your-flutter-app-domain.com
 
-# Admin seed (created on startup if not exists)
+# Admin seed
 ADMIN_EMAIL=admin@trackmate.com
-ADMIN_PASSWORD=<strong password>
+ADMIN_PASSWORD=AdminPass123
 ADMIN_FULL_NAME=Admin
+
+REDIS_URL=redis://localhost:6379
+FIREBASE_CREDENTIALS_JSON=
+
+COOKIE_SECURE=True
+COOKIE_SAMESITE=none
+GEMINI_API_KEY=
+
 ```
 
 > **⚠️ Cookie settings:** Render serves all web services over HTTPS. You **must** set `COOKIE_SECURE=true` and `COOKIE_SAMESITE=none` in production so that cross-origin cookies (Flutter web ↔ Render API) are accepted by the browser.

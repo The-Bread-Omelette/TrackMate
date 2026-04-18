@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:dio/dio.dart';
 import '../../core/di/injection.dart';
 import '../../core/constants/api_constants.dart';
 import '../../features/auth/presentation/bloc/auth_bloc.dart';
@@ -16,7 +18,6 @@ import '../../features/trainer/presentation/pages/find_trainer_page.dart';
 import '../../features/trainer/presentation/pages/coaching_hub_page.dart';
 import '../../features/nutrition/presentation/pages/food_logging_page.dart';
 import '../../features/workout/presentation/pages/exercise_page.dart';
-import 'package:dio/dio.dart';
 import '../../../main.dart';
 import '../../features/analytics/presentation/pages/analytics_page.dart';
 
@@ -100,7 +101,7 @@ class _DashboardBody extends StatelessWidget {
               children: [
                 // Aesthetic Greeting Header
                 Text(
-                  'Hello, ${user.fullName.split(' ').first} 👋',
+                  'Hello, ${user.fullName.split(' ').first}',
                   style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 4),
@@ -447,6 +448,8 @@ class _CalorieCard extends StatelessWidget {
   }
 }
 
+// ── LLM DYNAMIC INSIGHT CARD (MIGRATED TO BACKEND) ───────────────────────────
+
 class _DynamicInsightCard extends StatefulWidget {
   final dynamic data;
   const _DynamicInsightCard({super.key, required this.data});
@@ -456,53 +459,55 @@ class _DynamicInsightCard extends StatefulWidget {
 }
 
 class _DynamicInsightCardState extends State<_DynamicInsightCard> {
-  String? _activityLevel;
   bool _loading = true;
+  String _insightTitle = 'Analyzing Telemetry';
+  String _insightDescription = 'Compiling backend metrics for analysis...';
 
   @override
   void initState() {
     super.initState();
-    _fetchActivityLevel();
+    _fetchAndAnalyze();
   }
 
-  Future<void> _fetchActivityLevel() async {
+Future<void> _fetchAndAnalyze() async {
     try {
       final dio = sl<Dio>();
-      final res = await dio.get(ApiConstants.profile);
+      
+      final res = await dio.post('${ApiConstants.apiVersion}/insights/generate');
+
       if (mounted) {
         setState(() {
-          _activityLevel = res.data['profile']?['activity_level'] ?? 'moderately_active';
+          _insightTitle = res.data['title'] ?? 'Analysis Complete';
+          _insightDescription = res.data['description'] ?? 'Telemetry parsed successfully.';
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _insightTitle = 'Analysis Failed';
+          _insightDescription = 'Unable to establish connection with the inference server at this time.';
+          _loading = false;
+        });
+      }
     }
   }
 
+
+
+
+
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return Container(
-        padding: const EdgeInsets.all(24),
-        decoration: _modernCardDecoration(),
-        child: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    final net = widget.data.caloriesEaten - widget.data.caloriesBurned;
-    final insight = InsightEngine.getInsight(_activityLevel, net.toDouble());
-
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: _modernCardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // 🔥 Cleaned up header, gracefully centered with slight letter spacing
           const Center(
             child: Text(
-              'Daily Insight',
+              'Dynamic Analysis',
               style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -513,59 +518,65 @@ class _DynamicInsightCardState extends State<_DynamicInsightCard> {
           ),
           const SizedBox(height: 24),
 
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: insight.color.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else ...[
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.05),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.analytics_outlined, color: AppColors.primary, size: 28),
                 ),
-                child: Icon(insight.icon, color: insight.color, size: 28),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                        insight.title,
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: insight.color)
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                        'Net Calories: ${net > 0 ? '+' : ''}${net.toStringAsFixed(0)}',
-                        style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.textSecondary)
-                    ),
-                  ],
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          _insightTitle,
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primary)
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                          'Net Variance: ${(widget.data.caloriesEaten - widget.data.caloriesBurned).toStringAsFixed(0)} kcal',
+                          style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.textSecondary)
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
+              ],
+            ),
+            const SizedBox(height: 20),
 
-          // 🔥 Upgraded, beautiful, full-width elegant quote box
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-            decoration: BoxDecoration(
-              color: insight.color.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: insight.color.withValues(alpha: 0.15)),
-            ),
-            child: Text(
-              "\"${insight.description}\"",
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 15,
-                height: 1.5,
-                fontWeight: FontWeight.w500,
-                fontStyle: FontStyle.italic,
-                color: AppColors.textPrimary,
-                letterSpacing: 0.3,
+            // Refractive aesthetic matching clean industrial design
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+              ),
+              child: Text(
+                _insightDescription,
+                textAlign: TextAlign.left,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.6,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textPrimary,
+                  letterSpacing: 0.3,
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -578,6 +589,7 @@ class _WaterCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
@@ -796,68 +808,5 @@ class _MyTrainerCardState extends State<_MyTrainerCard> {
         ],
       ),
     );
-  }
-}
-
-class InsightData {
-  final String title;
-  final String description;
-  final Color color;
-  final IconData icon;
-
-  InsightData(this.title, this.description, this.color, this.icon);
-}
-
-class InsightEngine {
-  static InsightData getInsight(String? activityLevel, double netCalories) {
-    final level = activityLevel?.toLowerCase() ?? 'moderately_active';
-
-    // Sedentary (Little/No Exercise)
-    if (level == 'sedentary') {
-      if (netCalories < -500) return InsightData('Dangerously Low Energy', 'You are inactive, but undereating this severely can slow your metabolism.', AppColors.error, Icons.warning_amber_rounded);
-      if (netCalories < -100) return InsightData('Light Cut', 'A good steady deficit for weight loss with a sedentary lifestyle.', AppColors.success, Icons.trending_down);
-      if (netCalories <= 200) return InsightData('Maintaining Status Quo', 'You are perfectly balanced, but watch out for calorie creep!', Colors.blue, Icons.balance);
-      if (netCalories <= 500) return InsightData('Creeping Up', 'You are in a surplus. Since you aren\'t moving much, this may turn to fat.', Colors.orange, Icons.trending_up);
-      return InsightData('High Gain Risk', 'High surplus with low activity. Try to add a 30-minute walk today!', AppColors.error, Icons.directions_walk);
-    }
-
-    // Lightly Active (1-3 days/week)
-    if (level == 'lightly_active') {
-      if (netCalories < -500) return InsightData('Aggressive Cut', 'You might feel fatigued during your light workouts. Be careful.', Colors.orange, Icons.battery_alert);
-      if (netCalories < -100) return InsightData('Steady Burn', 'Optimal balance for healthy, sustainable weight loss.', AppColors.success, Icons.local_fire_department);
-      if (netCalories <= 200) return InsightData('Perfectly Maintained', 'Eating exactly right for your light movement.', Colors.blue, Icons.check_circle_outline);
-      if (netCalories <= 500) return InsightData('Slight Overfeed', 'A minor surplus. Consider adding a short jog to balance it.', Colors.orange, Icons.directions_run);
-      return InsightData('Outpacing Burn', 'Eating a bit too much for your current activity level.', AppColors.error, Icons.fastfood);
-    }
-
-    // Moderately Active (3-5 days/week)
-    if (level == 'moderately_active') {
-      if (netCalories < -500) return InsightData('Under-fueling', 'You train often! Feed your body so you don\'t lose muscle.', AppColors.error, Icons.restaurant);
-      if (netCalories < -100) return InsightData('Lean Down Phase', 'Great for cutting body fat while maintaining training.', AppColors.success, Icons.fitness_center);
-      if (netCalories <= 200) return InsightData('Prime Performance', 'Exactly what your body needs to perform and recover.', Colors.blue, Icons.bolt);
-      if (netCalories <= 500) return InsightData('Lean Muscle Building', 'A great slight surplus for building muscle slowly.', AppColors.success, Icons.add_circle_outline);
-      return InsightData('Calorie Spillover', 'Eating more than your muscles need to recover. Scale it back.', Colors.orange, Icons.warning);
-    }
-
-    // Very Active (6-7 days/week)
-    if (level == 'very_active') {
-      if (netCalories < -500) return InsightData('Crash Warning', 'Extreme deficit! High risk of muscle loss and severe fatigue.', AppColors.error, Icons.warning_amber_rounded);
-      if (netCalories < -100) return InsightData('Athletic Cut', 'Keep your protein high to protect your muscles during this cut.', Colors.orange, Icons.shield);
-      if (netCalories <= 200) return InsightData('Optimal Fueling', 'Incredible energy balance for your heavy training schedule.', Colors.blue, Icons.battery_charging_full);
-      if (netCalories <= 500) return InsightData('Anabolic Zone', 'Perfect surplus for fueling hard workouts and muscle growth.', AppColors.success, Icons.trending_up);
-      return InsightData('Aggressive Bulk', 'High surplus. Ensure you are lifting heavy to use this energy!', Colors.purple, Icons.fitness_center);
-    }
-
-    // Extra Active (Physical Job / Athlete)
-    if (level == 'extra_active') {
-      if (netCalories < -500) return InsightData('Severe Depletion', 'EAT! You are burning massive energy and need fuel to survive.', AppColors.error, Icons.local_dining);
-      if (netCalories < -100) return InsightData('Slight Undereating', 'Careful with your recovery. Your body is under high stress.', Colors.orange, Icons.health_and_safety);
-      if (netCalories <= 200) return InsightData('Machine Fueled', 'Perfect balance for extreme daily physical output.', Colors.blue, Icons.settings);
-      if (netCalories <= 500) return InsightData('Recovery Mode', 'Needed surplus to rebuild muscle after exhausting days.', AppColors.success, Icons.build);
-      return InsightData('Max Calorie Intake', 'A massive surplus. Make sure it\'s coming from clean, nutritious foods.', Colors.purple, Icons.restaurant_menu);
-    }
-
-    // Fallback just in case
-    return InsightData('Logging Data', 'Keep tracking your meals and workouts to see your insights.', Colors.grey, Icons.analytics);
   }
 }
