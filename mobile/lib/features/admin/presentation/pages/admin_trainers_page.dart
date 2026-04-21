@@ -27,53 +27,18 @@ class _AdminTrainersPageState extends State<AdminTrainersPage> {
   Future<void> _load() async {
     if (!mounted) return;
     setState(() => _loading = true);
+    
     try {
       final Future<Map<String, dynamic>> Function({String? status}) fetchFunc = 
         _category == 'new' ? _ds.getNewAdmissions : _ds.getProfileUpdates;
 
-      final pRes = await fetchFunc(status: 'pending'); 
-      final aRes = await fetchFunc(status: 'approved');
-      final rRes = await fetchFunc(status: 'rejected');
-
-      final pApps = (pRes['applications'] as List? ?? []).map((e) => {...e as Map<String,dynamic>, 'status': 'pending'}).toList();
-      final aApps = (aRes['applications'] as List? ?? []).map((e) => {...e as Map<String,dynamic>, 'status': 'approved'}).toList();
-      final rApps = (rRes['applications'] as List? ?? []).map((e) => {...e as Map<String,dynamic>, 'status': 'rejected'}).toList();
-
-      final allAppsList = [...pApps, ...aApps, ...rApps];
-
-      allAppsList.sort((a, b) {
-        final dateA = DateTime.tryParse(a['created_at']?.toString() ?? a['submitted_at']?.toString() ?? '') ?? DateTime(2000);
-        final dateB = DateTime.tryParse(b['created_at']?.toString() ?? b['submitted_at']?.toString() ?? '') ?? DateTime(2000);
-        return dateB.compareTo(dateA); 
-      });
-
-      final Map<String, dynamic> latestAppsPerUser = {};
-      for (final app in allAppsList) {
-        final uid = app['user_id'] ?? app['id'];
-        if (!latestAppsPerUser.containsKey(uid)) {
-          latestAppsPerUser[uid] = app;
-        }
-      }
-
-      final filteredApps = latestAppsPerUser.values.toList();
-      
-      int countP = 0, countA = 0, countR = 0;
-      final List<dynamic> currentTabApps = [];
-
-      for (final app in filteredApps) {
-        final status = app['status'];
-        if (status == 'pending') countP++;
-        else if (status == 'approved') countA++;
-        else if (status == 'rejected') countR++;
-
-        if (status == _currentTab) {
-          currentTabApps.add(app);
-        }
-      }
+      // Fetch the exact status we are viewing. The backend natively provides global
+      // counts for all statuses inside the 'summary' object on every request.
+      final response = await fetchFunc(status: _currentTab);
 
       _data = {
-        'summary': {'pending': countP, 'approved': countA, 'rejected': countR},
-        'applications': currentTabApps,
+        'summary': response['summary'] ?? {},
+        'applications': response['applications'] ?? [],
       };
 
     } catch (e) {

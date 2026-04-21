@@ -91,7 +91,8 @@ async def generate_dynamic_insight(
     1. Tone must be industrial, sophisticated, objective, and strictly professional.
     2. Do NOT use any emojis, clichés, slang, or overly enthusiastic exclamation marks.
     3. Focus strictly on the data and its physiological implications.
-
+    4. However, do not make it too technical. Make it easy for everyone to understand and give precise directives with a simple analysis. Do not make it too lengthy
+    5. 5. Talk as if you are a trainer, do not talk like a bot.
     Return strictly a JSON object with this exact schema:
     {{
       "title": "A precise 2-4 word analytical header",
@@ -100,7 +101,6 @@ async def generate_dynamic_insight(
     """
 
     try:
-        # CORRECTED: Changed model target from gemini-2.0-flash to match the successful curl request
         response = await client.aio.models.generate_content(
             model="gemini-flash-latest", 
             contents=prompt,

@@ -16,6 +16,7 @@ class ProfileUpdateRequest(BaseModel):
     daily_calorie_goal: Optional[int] = None
     activity_level: Optional[ActivityLevel] = None
     specializations: Optional[str] = Field(default=None, max_length=500)
+    certifications: Optional[str] = Field(default=None, max_length=500)
     experience_years: Optional[int] = None
     hourly_rate: Optional[float] = None
 
@@ -76,6 +77,7 @@ class ProfileResponse(BaseModel):
     daily_calorie_goal: Optional[int]
     activity_level: Optional[ActivityLevel]
     specializations: Optional[str]
+    certifications: Optional[str]
     experience_years: Optional[int]
     hourly_rate: Optional[float] = None
     tdee: Optional[float] = None # calculated, not stored

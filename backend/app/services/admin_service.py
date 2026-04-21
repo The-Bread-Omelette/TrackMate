@@ -2,7 +2,7 @@ import uuid
 import random
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.orm import selectinload
 from app.models.user import User, UserRole, TrainerStatus
 from app.models.social import Report, ReportStatus
@@ -80,42 +80,87 @@ class AdminService:
         return user
 
     async def get_new_admissions(self, db: AsyncSession, status: str | None = None) -> dict:
-        base_query = select(TrainerApplication).join(User, TrainerApplication.user_id == User.id).where(User.role != UserRole.TRAINER)
+        query = select(TrainerApplication).join(User).options(
+            selectinload(TrainerApplication.user).selectinload(User.profile)
+        )
         
-        query = base_query.options(selectinload(TrainerApplication.user).selectinload(User.profile))
-        if status:
-            query = query.where(TrainerApplication.status == status)
+        if status == "pending":
+            query = query.where(User.role != UserRole.TRAINER, TrainerApplication.status == "pending")
+        elif status == "rejected":
+            query = query.where(User.role != UserRole.TRAINER, TrainerApplication.status == "rejected")
+        elif status == "approved":
+            query = query.where(TrainerApplication.status == "approved")
+        else:
+            query = query.where(
+                or_(
+                    and_(User.role != UserRole.TRAINER, TrainerApplication.status.in_(["pending", "rejected"])),
+                    TrainerApplication.status == "approved"
+                )
+            )
+            
         query = query.order_by(TrainerApplication.submitted_at.desc())
-        
         result = await db.execute(query)
         apps = result.scalars().all()
 
-        total = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(User.role != UserRole.TRAINER))
-        pending = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(User.role != UserRole.TRAINER, TrainerApplication.status == "pending"))
-        approved = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(User.role != UserRole.TRAINER, TrainerApplication.status == "approved"))
-        rejected = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(User.role != UserRole.TRAINER, TrainerApplication.status == "rejected"))
+        total = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(
+            or_(
+                and_(User.role != UserRole.TRAINER, TrainerApplication.status.in_(["pending", "rejected"])),
+                TrainerApplication.status == "approved"
+            )
+        ))
+        pending = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(
+            User.role != UserRole.TRAINER, TrainerApplication.status == "pending"
+        ))
+        approved = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(
+            TrainerApplication.status == "approved"
+        ))
+        rejected = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(
+            User.role != UserRole.TRAINER, TrainerApplication.status == "rejected"
+        ))
         
         return {
             "summary": {"total": total.scalar_one(), "pending": pending.scalar_one(), "approved": approved.scalar_one(), "rejected": rejected.scalar_one()},
             "applications": [self._format_app(a) for a in apps]
         }
 
-    # ── SPLIT 2: Profile Updates (Approved Trainers updating info) ──
     async def get_profile_updates(self, db: AsyncSession, status: str | None = None) -> dict:
-        base_query = select(TrainerApplication).join(User, TrainerApplication.user_id == User.id).where(User.role == UserRole.TRAINER)
+        query = select(TrainerApplication).join(User).options(
+            selectinload(TrainerApplication.user).selectinload(User.profile)
+        )
         
-        query = base_query.options(selectinload(TrainerApplication.user).selectinload(User.profile))
-        if status:
-            query = query.where(TrainerApplication.status == status)
+        if status == "pending":
+            query = query.where(User.role == UserRole.TRAINER, TrainerApplication.status == "pending")
+        elif status == "rejected":
+            query = query.where(User.role == UserRole.TRAINER, TrainerApplication.status == "rejected")
+        elif status == "approved":
+            query = query.where(TrainerApplication.status == "approved")
+        else:
+            query = query.where(
+                or_(
+                    and_(User.role == UserRole.TRAINER, TrainerApplication.status.in_(["pending", "rejected"])),
+                    TrainerApplication.status == "approved"
+                )
+            )
+            
         query = query.order_by(TrainerApplication.submitted_at.desc())
-        
         result = await db.execute(query)
         apps = result.scalars().all()
 
-        total = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(User.role == UserRole.TRAINER))
-        pending = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(User.role == UserRole.TRAINER, TrainerApplication.status == "pending"))
-        approved = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(User.role == UserRole.TRAINER, TrainerApplication.status == "approved"))
-        rejected = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(User.role == UserRole.TRAINER, TrainerApplication.status == "rejected"))
+        total = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(
+            or_(
+                and_(User.role == UserRole.TRAINER, TrainerApplication.status.in_(["pending", "rejected"])),
+                TrainerApplication.status == "approved"
+            )
+        ))
+        pending = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(
+            User.role == UserRole.TRAINER, TrainerApplication.status == "pending"
+        ))
+        approved = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(
+            TrainerApplication.status == "approved"
+        ))
+        rejected = await db.execute(select(func.count(TrainerApplication.id)).join(User).where(
+            User.role == UserRole.TRAINER, TrainerApplication.status == "rejected"
+        ))
         
         return {
             "summary": {"total": total.scalar_one(), "pending": pending.scalar_one(), "approved": approved.scalar_one(), "rejected": rejected.scalar_one()},
@@ -140,12 +185,10 @@ class AdminService:
             "reviewed_at": a.reviewed_at.isoformat() if a.reviewed_at else None,
         }
         
-        # Inject old profile data for diffing in the frontend
         if include_diff and a.user and a.user.profile:
-            data["old_experience_years"] = a.user.profile.experience_years
-            data["old_specializations"] = a.user.profile.specializations
-            # certifications might not exist on the old profile, handling safely
-            data["old_certifications"] = getattr(a.user.profile, 'certifications', 'None')
+            data["old_experience_years"] = getattr(a.user.profile, 'experience_years', None)
+            data["old_specializations"] = getattr(a.user.profile, 'specializations', None)
+            data["old_certifications"] = getattr(a.user.profile, 'certifications', None)
             
         return data
 
@@ -162,24 +205,55 @@ class AdminService:
         if not app:
             raise NotFoundError("Application")
 
-        app.status = "approved" if approve else "rejected"
+        current_app_status = app.status
         app.reviewed_at = datetime.now(timezone.utc)
 
         if approve:
+            app.status = "approved"
+            if user.profile:
+                user.profile.specializations = app.specializations
+                user.profile.experience_years = app.experience_years
+                if hasattr(user.profile, 'certifications'):
+                    user.profile.certifications = app.certifications
+                if hasattr(user.profile, 'hourly_rate'):
+                    user.profile.hourly_rate = app.hourly_rate
+                if hasattr(user.profile, 'bio'):
+                    user.profile.bio = app.about
+
             if user.role != UserRole.TRAINER:
-                # 1. New Admission: Upgrade role
                 user.role = UserRole.TRAINER
                 user.trainer_status = TrainerStatus.APPROVED
+
+        else: # Reject / Revoke Logic
+            if current_app_status == "pending" and user.role == UserRole.TRAINER:
+                # 1. Rejecting a Profile Update: We reset the application back to 'approved' and revert 
+                # the fields to match the live profile so the active trainer isn't accidentally revoked.
+                app.status = "approved"
+                app.specializations = user.profile.specializations if user.profile else None
+                app.experience_years = user.profile.experience_years if user.profile else None
+                app.certifications = getattr(user.profile, 'certifications', None)
+                app.hourly_rate = getattr(user.profile, 'hourly_rate', None)
+                app.about = getattr(user.profile, 'bio', None)
+                
             else:
-                # 2. Profile Update: Sync sensitive fields to live profile
-                if user.profile:
-                    user.profile.specializations = app.specializations
-                    user.profile.experience_years = app.experience_years
-                    if hasattr(user.profile, 'certifications'):
-                        user.profile.certifications = app.certifications
-        else:
-            if user.role != UserRole.TRAINER:
+                # 2. Rejecting a New Admission OR Revoking an Approved Trainer
+                app.status = "rejected"
                 user.trainer_status = TrainerStatus.REJECTED
+                
+                # FORCE AUTH DOWNGRADE: Safely reassign role to strip UI and Endpoint access
+                if hasattr(UserRole, 'TRAINEE'):
+                    user.role = UserRole.TRAINEE
+                else:
+                    user.role = UserRole.USER
+                    
+                # SCRUB PROFILE DATA: Remove all instances of trainer specific data from the live profile
+                if user.profile:
+                    user.profile.specializations = None
+                    user.profile.experience_years = None
+                    if hasattr(user.profile, 'certifications'):
+                        user.profile.certifications = None
+                    if hasattr(user.profile, 'hourly_rate'):
+                        user.profile.hourly_rate = None
 
         await db.flush()
         return {"status": app.status, "role": user.role.value}
