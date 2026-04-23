@@ -149,11 +149,3 @@ async def get_flagged_messages(
 ):
     return await admin_service.get_flagged_messages(db)
 
-
-@router.get("/summary/{user_id}", status_code=status.HTTP_200_OK)
-async def get_user_summary(
-    user_id: uuid.UUID,
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    return await admin_service.generate_summary(db, user_id)

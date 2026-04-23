@@ -1,9 +1,9 @@
 import uuid
-import random
-from datetime import datetime, timezone
+from datetime import datetime, date, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
 from sqlalchemy.orm import selectinload
+from app.models.fitness import WorkoutSession, WorkoutStatus, StepLog, HydrationLog
 from app.models.trainer import TrainerApplication, TrainerRequest, TrainerRequestStatus, TrainerSession, TrainerNote
 from app.models.user import User, UserRole
 from app.models.notification import NotificationType
@@ -295,16 +295,81 @@ class TrainerService:
             .options(selectinload(User.profile))
         )
         students = result.scalars().all()
-        return [self._student_summary(s) for s in students]
+        return [await self._student_summary(db, s) for s in students]
 
-    def _student_summary(self, user: User) -> dict:
-        seed = int(str(user.id).replace("-", "")[:8], 16)
-        random.seed(seed)
-        adherence = random.randint(55, 98)
-        workout_score = random.randint(50, 100)
-        streak = random.randint(0, 30)
-        excellence = round((adherence * 0.4 + workout_score * 0.4 + min(streak * 2, 20)) / 1.0, 1)
-        needs_attention = adherence < 65 or streak < 3
+    async def _student_summary(self, db: AsyncSession, user: User) -> dict:
+        now = datetime.now(timezone.utc)
+        workout_window = now - timedelta(days=14)
+        step_window = date.today() - timedelta(days=6)
+        hydration_start = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=timezone.utc)
+
+        workout_result = await db.execute(
+            select(
+                func.count(WorkoutSession.id),
+                func.sum(WorkoutSession.calories_burned),
+            ).where(
+                WorkoutSession.user_id == user.id,
+                WorkoutSession.status == WorkoutStatus.COMPLETED,
+                WorkoutSession.started_at >= workout_window,
+            )
+        )
+        workout_count, total_calories = workout_result.one()
+        workout_count = workout_count or 0
+        total_calories = total_calories or 0.0
+        avg_calories = total_calories / workout_count if workout_count else 0.0
+
+        step_result = await db.execute(
+            select(StepLog).where(
+                StepLog.user_id == user.id,
+                StepLog.logged_date >= step_window,
+            ).order_by(StepLog.logged_date.desc())
+        )
+        step_logs = step_result.scalars().all()
+
+        step_goal = user.profile.daily_step_goal or 10000
+        step_by_date = {log.logged_date: log.steps for log in step_logs}
+
+        streak = 0
+        current_day = date.today()
+        for _ in range(7):
+            if step_by_date.get(current_day, 0) >= step_goal:
+                streak += 1
+                current_day -= timedelta(days=1)
+                continue
+            break
+
+        completion_ratios = []
+        current_day = date.today()
+        for _ in range(7):
+            steps = step_by_date.get(current_day, 0)
+            completion_ratios.append(min(1.0, steps / step_goal) if step_goal else 0.0)
+            current_day -= timedelta(days=1)
+
+        avg_step_ratio = sum(completion_ratios) / 7 if completion_ratios else 0.0
+
+        hydration_result = await db.execute(
+            select(func.sum(HydrationLog.amount_ml)).where(
+                HydrationLog.user_id == user.id,
+                HydrationLog.logged_at >= hydration_start,
+            )
+        )
+        hydration_ml = hydration_result.scalar_one() or 0
+        hydration_ratio = min(1.0, hydration_ml / 2500)
+
+        workout_ratio = min(1.0, workout_count / 4)
+        adherence = round(
+            (workout_ratio * 0.6 + avg_step_ratio * 0.3 + hydration_ratio * 0.1) * 100,
+            1,
+        )
+        workout_score = round(
+            min(100, workout_ratio * 80 + min(avg_calories, 600) / 600 * 20),
+            1,
+        )
+        excellence = round(
+            (adherence * 0.5 + workout_score * 0.35 + min(streak * 10, 25)) / 1.0,
+            1,
+        )
+        needs_attention = adherence < 70 or streak < 3 or workout_count == 0
 
         return {
             "id": str(user.id),
@@ -345,7 +410,7 @@ class TrainerService:
         )
         notes = notes_result.scalars().all()
 
-        summary = self._student_summary(student)
+        summary = await self._student_summary(db, student)
         summary["notes"] = [
             {"id": str(n.id), "content": n.content, "created_at": n.created_at.isoformat()}
             for n in notes

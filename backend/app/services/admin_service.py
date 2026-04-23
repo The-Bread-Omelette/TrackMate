@@ -337,32 +337,5 @@ class AdminService:
             })
         return flagged
 
-    async def generate_summary(self, db: AsyncSession, user_id: uuid.UUID) -> dict:
-        user = await self.get_user(db, user_id)
-        seed = int(str(user_id).replace("-", "")[:8], 16)
-        random.seed(seed + int(datetime.now().strftime("%Y%W")))
-
-        adherence = random.randint(60, 95)
-        workout_freq = random.randint(2, 6)
-        calorie_balance = random.choice(["on track", "slightly over", "slightly under"])
-        streak = random.randint(1, 21)
-
-        return {
-            "user_id": str(user_id),
-            "week": datetime.now().strftime("%Y-W%W"),
-            "summary": (
-                f"{user.full_name} had a {'great' if adherence > 80 else 'moderate'} week. "
-                f"Workout frequency was {workout_freq} sessions. "
-                f"Calorie intake was {calorie_balance}. "
-                f"Current streak: {streak} days. "
-                f"Overall adherence: {adherence}%."
-            ),
-            "metrics": {
-                "adherence_pct": adherence,
-                "workout_sessions": workout_freq,
-                "calorie_balance": calorie_balance,
-                "streak_days": streak,
-            }
-        }
 
 admin_service = AdminService()
