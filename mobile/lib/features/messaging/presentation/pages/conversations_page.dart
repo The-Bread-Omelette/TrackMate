@@ -7,6 +7,7 @@ import '../../../../shared/widgets/main_layout.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../data/messaging_remote_datasource.dart';
 import '../../../social/data/social_remote_datasource.dart';
+import '../../../trainer/data/trainer_remote_datasource.dart';
 import 'chat_page.dart';
 
 class ConversationsPage extends StatefulWidget {
@@ -38,19 +39,12 @@ class _ConversationsPageState extends State<ConversationsPage> {
   }
 
   void _showNewChatSheet(String currentUserId) {
-    // 🔥 FIX: Extract all the IDs of users we ALREADY have an active chat with
-    final existingUserIds = _conversations
-        .map((c) => c['other_user']?['id']?.toString())
-        .whereType<String>()
-        .toList();
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => _NewChatSheet(
         currentUserId: currentUserId,
-        existingChatUserIds: existingUserIds, // Pass the active chat IDs to the sheet
         onChatStarted: () => _load(), 
       ),
     );
@@ -144,12 +138,10 @@ class _ConversationsPageState extends State<ConversationsPage> {
 
 class _NewChatSheet extends StatefulWidget {
   final String currentUserId;
-  final List<String> existingChatUserIds;
   final VoidCallback onChatStarted;
   
   const _NewChatSheet({
     required this.currentUserId, 
-    required this.existingChatUserIds, 
     required this.onChatStarted
   });
 
@@ -159,58 +151,110 @@ class _NewChatSheet extends StatefulWidget {
 
 class _NewChatSheetState extends State<_NewChatSheet> {
   final _socialDs = SocialRemoteDataSource(sl());
+  final _trainerDs = TrainerRemoteDataSource(sl());
   final _msgDs = sl<MessagingRemoteDataSource>();
   
   bool _loading = true;
-  List<dynamic> _friends = [];
+  
+  List<dynamic> _eligibleContacts = []; 
   List<dynamic> _searchResults = [];
   final _searchCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _loadFriends();
+    _loadContacts();
   }
 
-  Future<void> _loadFriends() async {
+  Future<void> _loadContacts() async {
     try {
-      final friends = await _socialDs.getFriends();
+      final userState = context.read<AuthBloc>().state;
+      final userRole = userState is AuthAuthenticatedState 
+          ? userState.user.role.toString().toLowerCase() 
+          : 'trainee';
       
-      // 🔥 FIX: Filter out friends you already have a conversation with
-      final filteredFriends = friends.where((f) {
-        final id = (f as Map)['id']?.toString();
-        return id != null && !widget.existingChatUserIds.contains(id);
-      }).toList();
+      // 1. Fetch Friends & Force Label
+      List<dynamic> friends = [];
+      try {
+        // Create a modifiable list
+        friends = List.from(await _socialDs.getFriends());
+        for (var f in friends) {
+          if (f is Map) f['contact_label'] = 'Friend';
+        }
+      } catch (_) {}
+
+      // 2. Fetch Trainer or Students & Force Label
+      List<dynamic> professionalContacts = [];
+      try {
+        if (userRole.contains('trainer') || userRole.contains('admin')) {
+          professionalContacts = List.from(await _trainerDs.getStudents());
+          for (var p in professionalContacts) {
+            if (p is Map) p['contact_label'] = 'Student';
+          }
+        } else {
+          final trainer = await _trainerDs.getMyTrainer();
+          if (trainer != null) {
+            // 🔥 FORCE THE ROLE TO BE TRAINER! No more guessing from the backend.
+            trainer['contact_label'] = 'Trainer';
+            professionalContacts = [trainer];
+          }
+        }
+      } catch (e) {
+        debugPrint("Error fetching professional contacts: $e");
+      }
+
+      // 3. Merge them and extract the CORRECT User ID
+      final Map<String, dynamic> uniqueContacts = {};
+      for (var person in [...friends, ...professionalContacts]) {
+        final targetUserId = person['user_id']?.toString() ?? person['id']?.toString();
+        
+        if (targetUserId != null) {
+          person['chat_target_id'] = targetUserId; 
+          
+          // If the person is already in the list (e.g., they are a Friend AND your Trainer)
+          // Make sure the "Trainer" label overrides the "Friend" label!
+          if (uniqueContacts.containsKey(targetUserId)) {
+            if (person['contact_label'] != 'Friend') {
+              uniqueContacts[targetUserId]!['contact_label'] = person['contact_label'];
+            }
+          } else {
+            uniqueContacts[targetUserId] = person;
+          }
+        }
+      }
+
+      final finalContacts = uniqueContacts.values
+          .where((c) => c['chat_target_id'] != widget.currentUserId)
+          .toList();
 
       if (mounted) {
         setState(() {
-          _friends = filteredFriends;
+          _eligibleContacts = finalContacts;
           _loading = false;
         });
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint("Fatal error in contact load: $e");
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _search(String q) async {
+  void _search(String q) {
     if (q.trim().isEmpty) {
       setState(() => _searchResults = []);
       return;
     }
-    try {
-      final res = await _socialDs.searchUsers(q); 
-      
-      // 🔥 FIX: Filter out yourself AND anyone you already have a chat with
-      final filteredRes = res.where((u) {
-        final id = (u as Map)['id']?.toString();
-        return id != null && 
-               id != widget.currentUserId && 
-               !widget.existingChatUserIds.contains(id);
-      }).toList();
-
-      if (mounted) setState(() => _searchResults = filteredRes);
-    } catch (_) {}
+    
+    final query = q.toLowerCase().trim();
+    
+    final results = _eligibleContacts.where((u) {
+      final name = (u['full_name'] ?? '').toLowerCase();
+      // Search by the new injected label too!
+      final label = (u['contact_label'] ?? '').toLowerCase();
+      return name.contains(query) || label.contains(query);
+    }).toList();
+    
+    setState(() => _searchResults = results);
   }
 
   void _startChat(Map<String, dynamic> otherUser) async {
@@ -221,7 +265,9 @@ class _NewChatSheetState extends State<_NewChatSheet> {
           builder: (_) => const Center(child: CircularProgressIndicator())
         );
         
-        final conv = await _msgDs.startConversation(otherUser['id']);
+        final targetId = otherUser['chat_target_id'];
+        
+        final conv = await _msgDs.startConversation(targetId);
         
         if (!mounted) return;
         Navigator.pop(context); 
@@ -229,7 +275,7 @@ class _NewChatSheetState extends State<_NewChatSheet> {
         
         await Navigator.push(context, MaterialPageRoute(builder: (_) => ChatPage(
            conversationId: conv['conversation_id'],
-           otherUserId: otherUser['id'],
+           otherUserId: targetId,
            otherUserName: otherUser['full_name'] ?? 'User',
            ds: _msgDs,
            currentUserId: widget.currentUserId,
@@ -240,7 +286,7 @@ class _NewChatSheetState extends State<_NewChatSheet> {
         if (mounted) {
           Navigator.pop(context); 
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to start conversation'))
+            const SnackBar(content: Text('Failed to start conversation. Please try again.'))
           );
         }
      }
@@ -248,7 +294,7 @@ class _NewChatSheetState extends State<_NewChatSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final displayList = _searchCtrl.text.trim().isNotEmpty ? _searchResults : _friends;
+    final displayList = _searchCtrl.text.trim().isNotEmpty ? _searchResults : _eligibleContacts;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.9,
@@ -274,7 +320,7 @@ class _NewChatSheetState extends State<_NewChatSheet> {
                   controller: _searchCtrl,
                   onChanged: _search,
                   decoration: InputDecoration(
-                    hintText: 'Search for friends or trainers...',
+                    hintText: 'Search your connections...',
                     prefixIcon: const Icon(Icons.search, color: AppColors.textMuted),
                     filled: true,
                     fillColor: AppColors.surface,
@@ -287,19 +333,52 @@ class _NewChatSheetState extends State<_NewChatSheet> {
                 child: _loading 
                   ? const Center(child: CircularProgressIndicator())
                   : displayList.isEmpty
-                    ? Center(child: Text(_searchCtrl.text.isEmpty ? 'All friends have active chats.' : 'No new users found.', style: const TextStyle(color: AppColors.textMuted)))
+                    ? const Center(child: Text('No connections found.', style: TextStyle(color: AppColors.textMuted)))
                     : ListView.builder(
                         controller: controller,
                         itemCount: displayList.length,
                         itemBuilder: (context, i) {
                           final user = displayList[i] as Map<String, dynamic>;
+                          
+                          // Look exactly at the label we injected
+                          final label = user['contact_label'] as String? ?? 'Friend';
+                          final isPro = label == 'Trainer';
+                          
                           return ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: AppColors.primary.withOpacity(0.1),
-                              child: Text((user['full_name'] as String? ?? 'U')[0].toUpperCase(), style: const TextStyle(color: AppColors.primary)),
+                              backgroundColor: isPro ? AppColors.primary.withOpacity(0.1) : Colors.grey.shade200,
+                              child: Text(
+                                (user['full_name'] as String? ?? 'U')[0].toUpperCase(), 
+                                style: TextStyle(color: isPro ? AppColors.primary : Colors.black87, fontWeight: FontWeight.bold)
+                              ),
                             ),
                             title: Text(user['full_name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            subtitle: Text(user['role'] ?? 'User'),
+                            
+                            // 🔥 THE NEW BEAUTIFUL BLUE BUBBLE DESIGN
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 4.0),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: isPro ? AppColors.primary.withOpacity(0.1) : Colors.grey.shade200,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: isPro ? AppColors.primary.withOpacity(0.3) : Colors.transparent),
+                                    ),
+                                    child: Text(
+                                      label, 
+                                      style: TextStyle(
+                                        color: isPro ? AppColors.primary : Colors.black54, 
+                                        fontSize: 10, 
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.5,
+                                      )
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                             trailing: const Icon(Icons.chat_bubble_outline, color: AppColors.primary, size: 20),
                             onTap: () => _startChat(user),
                           );
