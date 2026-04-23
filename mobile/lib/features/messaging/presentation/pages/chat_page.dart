@@ -35,10 +35,27 @@ class _ChatPageState extends State<ChatPage> {
   
   bool _isOtherTyping = false;
   Timer? _typingTimer;
+  Timer? _myTypingDebounce;
   bool _connected = false;
 
   Map<String, dynamic>? _replyingTo;
   Map<String, dynamic>? _pinnedMessage;
+
+  bool get _isChatReadOnly {
+    for (int i = _messages.length - 1; i >= 0; i--) {
+      final msg = _messages[i]['content'] as String? ?? '';
+      if (msg.startsWith('System: ')) {
+        final lower = msg.toLowerCase();
+        if (lower.contains('no longer') || lower.contains('terminated') || lower.contains('cancelled')) {
+          return true; 
+        }
+        if (lower.contains('now friends') || lower.contains('accepted')) {
+          return false; 
+        }
+      }
+    }
+    return false; 
+  }
 
   @override
   void initState() {
@@ -51,13 +68,18 @@ class _ChatPageState extends State<ChatPage> {
     _inputCtrl.dispose();
     _scroll.dispose();
     _typingTimer?.cancel();
-    _channel?.sink.close();
+    _myTypingDebounce?.cancel();
+    try {
+      _channel?.sink.close();
+    } catch (_) {}
     super.dispose();
   }
 
   Future<void> _init() async {
     try {
       final msgs = await widget.ds.getMessages(widget.conversationId);
+      if (!mounted) return;
+      
       setState(() {
         _messages.addAll(msgs.cast<Map<String, dynamic>>());
         final pinned = _messages.lastWhere((m) => m['is_pinned'] == true, orElse: () => <String, dynamic>{});
@@ -65,7 +87,6 @@ class _ChatPageState extends State<ChatPage> {
           _pinnedMessage = pinned;
         }
       });
-      // This works successfully now since the backend 500 error was patched
       await widget.ds.markRead(widget.conversationId);
     } catch (_) {}
 
@@ -82,10 +103,12 @@ class _ChatPageState extends State<ChatPage> {
         Uri.parse('$wsBase$apiVer/messaging/ws?ticket=${Uri.encodeComponent(ticket)}'),
       );
       
-      setState(() => _connected = true);
+      if (mounted) setState(() => _connected = true);
 
       _channel!.stream.listen(
         (raw) {
+          if (!mounted) return; 
+
           final data = jsonDecode(raw as String) as Map<String, dynamic>;
           final type = data['type'] as String?;
 
@@ -114,12 +137,10 @@ class _ChatPageState extends State<ChatPage> {
                   final exists = _messages.any((m) => m['id'] == msg['id']);
                   if (!exists) {
                     _messages.add(msg);
-                    
-                    // 🔥 FIX: Instantly tell the server we read the message while we are on this screen
-                    _channel?.sink.add(jsonEncode({
+                    _safeSendWs({
                       'type': 'mark_read',
                       'conversation_id': widget.conversationId,
-                    }));
+                    });
                   }
                 }
               });
@@ -127,21 +148,23 @@ class _ChatPageState extends State<ChatPage> {
             }
           } else if (type == 'message_pinned') {
             setState(() {
-              final idx = _messages.indexWhere((m) => m['id'] == data['message_id']);
+              final msgId = data['message_id'];
+              final idx = _messages.indexWhere((m) => m['id'] == msgId);
               if (idx != -1) {
                 _messages[idx]['is_pinned'] = data['is_pinned'];
-              }
-              if (data['is_pinned'] == true) {
-                _pinnedMessage = data;
-              } else if (_pinnedMessage?['message_id'] == data['message_id'] || _pinnedMessage?['id'] == data['message_id']) {
-                _pinnedMessage = null;
+                if (data['is_pinned'] == true) {
+                  // 🔥 FIX: Link to the actual message to prevent null text crashes
+                  _pinnedMessage = _messages[idx]; 
+                } else if (_pinnedMessage?['id'] == msgId) {
+                  _pinnedMessage = null;
+                }
               }
             });
           } else if (type == 'typing') {
             if (data['user_id'] != widget.currentUserId) {
               setState(() => _isOtherTyping = true);
               _typingTimer?.cancel();
-              _typingTimer = Timer(const Duration(seconds: 5), () {
+              _typingTimer = Timer(const Duration(seconds: 3), () {
                 if (mounted) setState(() => _isOtherTyping = false);
               });
             }
@@ -152,11 +175,9 @@ class _ChatPageState extends State<ChatPage> {
               }
             });
           } else if (type == 'error') {
-             if (mounted) {
-               ScaffoldMessenger.of(context).showSnackBar(
-                 SnackBar(content: Text('Server Error: ${data['message']}')),
-               );
-             }
+             ScaffoldMessenger.of(context).showSnackBar(
+               SnackBar(content: Text('Server Error: ${data['message']}')),
+             );
           }
         },
         onDone: () { if (mounted) setState(() => _connected = false); },
@@ -165,6 +186,16 @@ class _ChatPageState extends State<ChatPage> {
     } catch (_) {}
 
     _scrollToBottom();
+  }
+
+  void _safeSendWs(Map<String, dynamic> payload) {
+    if (!mounted || _channel == null || !_connected) return;
+    try {
+      _channel!.sink.add(jsonEncode(payload));
+    } catch (e) {
+      debugPrint('Websocket Send Failed: $e');
+      if (mounted) setState(() => _connected = false);
+    }
   }
 
  void _send() {
@@ -204,21 +235,24 @@ class _ChatPageState extends State<ChatPage> {
       payload['reply_to_id'] = currentReplyTo['id'];
     }
 
-    _channel!.sink.add(jsonEncode(payload));
+    _safeSendWs(payload);
   }
 
   void _pin(String messageId) {
-    _channel?.sink.add(jsonEncode({
+    _safeSendWs({
       'type': 'pin_message',
       'message_id': messageId,
-    }));
+    });
   }
 
   void _sendTyping() {
-    _channel?.sink.add(jsonEncode({
+    if (_myTypingDebounce?.isActive ?? false) return;
+    _myTypingDebounce = Timer(const Duration(seconds: 2), () {});
+    
+    _safeSendWs({
       'type': 'typing',
       'conversation_id': widget.conversationId,
-    }));
+    });
   }
 
   void _scrollToBottom() {
@@ -283,7 +317,7 @@ class _ChatPageState extends State<ChatPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      _pinnedMessage!['content'],
+                      _pinnedMessage!['content'] ?? 'Pinned Message',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primary),
@@ -291,7 +325,13 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, size: 16, color: AppColors.textMuted),
-                    onPressed: () => setState(() => _pinnedMessage = null),
+                    onPressed: () {
+                      // 🔥 FIX: Actually unpin from the backend when clicking X
+                      if (_pinnedMessage != null && _pinnedMessage!['id'] != null) {
+                        _pin(_pinnedMessage!['id'].toString());
+                      }
+                      setState(() => _pinnedMessage = null);
+                    },
                   ),
                 ],
               ),
@@ -306,7 +346,14 @@ class _ChatPageState extends State<ChatPage> {
                 if (_isOtherTyping && i == _messages.length) {
                   return _TypingBubble(name: widget.otherUserName);
                 }
+                
                 final m = _messages[i];
+                final content = m['content'] as String? ?? '';
+                
+                if (content.startsWith('System: ')) {
+                  return _SystemMessageBubble(content: content);
+                }
+
                 final isMe = m['sender_id'] == widget.currentUserId;
                 return _MessageBubble(
                   message: m,
@@ -352,47 +399,100 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
 
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              border: Border(top: BorderSide(color: AppColors.border)),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _inputCtrl,
-                    maxLength: 2000,
-                    onChanged: (_) => _sendTyping(),
-                    onSubmitted: (_) => _send(),
-                    decoration: InputDecoration(
-                      counterText: '',
-                      hintText: 'Type a message...',
-                      filled: true,
-                      fillColor: AppColors.background,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
+          _isChatReadOnly 
+            ? Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                decoration: const BoxDecoration(
+                  color: AppColors.surface,
+                  border: Border(top: BorderSide(color: AppColors.border)),
+                ),
+                child: const Text(
+                  'You can no longer reply to this conversation.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+              )
+            : Container(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                decoration: const BoxDecoration(
+                  color: AppColors.surface,
+                  border: Border(top: BorderSide(color: AppColors.border)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _inputCtrl,
+                        maxLength: 2000,
+                        onChanged: (_) => _sendTyping(),
+                        onSubmitted: (_) => _send(),
+                        decoration: InputDecoration(
+                          counterText: '',
+                          hintText: 'Type a message...',
+                          filled: true,
+                          fillColor: AppColors.background,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
+                        ),
                       ),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: _send,
+                      icon: const Icon(Icons.send),
+                      color: AppColors.primary,
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppColors.primary.withOpacity(0.1),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: _send,
-                  icon: const Icon(Icons.send),
-                  color: AppColors.primary,
-                  style: IconButton.styleFrom(
-                    backgroundColor: AppColors.primary.withOpacity(0.1),
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
         ],
+      ),
+    );
+  }
+}
+
+class _SystemMessageBubble extends StatelessWidget {
+  final String content;
+
+  const _SystemMessageBubble({required this.content});
+
+  @override
+  Widget build(BuildContext context) {
+    final displayText = content.replaceFirst('System: ', '').trim();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      alignment: Alignment.center,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF3C4), 
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 2,
+              offset: const Offset(0, 1),
+            )
+          ]
+        ),
+        child: Text(
+          displayText,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 12, 
+            color: Colors.black87, 
+            fontWeight: FontWeight.w500
+          ),
+        ),
       ),
     );
   }

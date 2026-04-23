@@ -5,7 +5,8 @@ import '../../../core/errors/api_exception.dart';
 class TrainerRemoteDataSource {
   final Dio dio;
   TrainerRemoteDataSource(this.dio);
-Future<Map<String, dynamic>?> getMyTrainer() async {
+
+  Future<Map<String, dynamic>?> getMyTrainer() async {
     try {
       // 🔥 FIX: Using ApiConstants.myTrainer so it hits /api/v1/trainer/my-trainer
       final res = await dio.get(ApiConstants.myTrainer);
@@ -14,6 +15,7 @@ Future<Map<String, dynamic>?> getMyTrainer() async {
       throw mapDioError(e);
     }
   }
+
   Future<List<dynamic>> getStudents() async {
     try {
       final res = await dio.get(ApiConstants.trainerStudents);
@@ -104,19 +106,41 @@ Future<Map<String, dynamic>?> getMyTrainer() async {
     }
   }
 
-Future<void> scheduleSession(String traineeId, DateTime scheduledAt, int duration, String? notes) async {
+  // For Trainer to book a session
+  Future<void> scheduleSession(
+    String studentId,
+    DateTime scheduledAt,
+    int duration,
+    String rawNotes, {
+    String? location,
+    String? meetingLink,
+    String? type,
+  }) async {
     try {
-      await dio.post('${ApiConstants.apiVersion}/trainer/calendar/sessions', data: {
-        'trainee_id': traineeId,
-        'scheduled_at': scheduledAt.toUtc().toIso8601String(),
-        'duration_minutes': duration,
-        if (notes != null && notes.isNotEmpty) 'notes': notes,
-      });
+      // 🔥 FRONTEND TRICK: Pack the extra data into the notes string so the backend doesn't reject it
+      final combinedNotes = '[Type:${type ?? "online"}] [Link:${meetingLink ?? ""}] [Loc:${location ?? ""}]\n$rawNotes';
+
+      await dio.post(
+        '/api/v1/trainer/calendar/sessions',
+        data: {
+          'trainee_id': studentId,
+          'scheduled_at': scheduledAt.toUtc().toIso8601String(),
+          'duration_minutes': duration,
+          'notes': combinedNotes, // Send the packed string instead of separate fields
+        },
+      );
     } on DioException catch (e) {
       throw mapDioError(e);
     }
   }
-
+// 🔥 REQUIRED FOR THE EDIT BUTTON TO WORK
+  Future<void> updateSession(String sessionId, Map<String, dynamic> updates) async {
+    try {
+      await dio.patch('/api/v1/trainer/calendar/sessions/$sessionId', data: updates);
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
   Future<List<dynamic>> getAvailableTrainers() async {
     try {
       final res = await dio.get(ApiConstants.trainerAvailable);
@@ -134,6 +158,7 @@ Future<void> scheduleSession(String traineeId, DateTime scheduledAt, int duratio
       throw mapDioError(e);
     }
   }
+
   // For Trainee to get their notes
   Future<List<dynamic>> getMyNotes() async {
     try {
@@ -143,7 +168,4 @@ Future<void> scheduleSession(String traineeId, DateTime scheduledAt, int duratio
       throw mapDioError(e);
     }
   }
-
-  // For Trainer to book a session
-
 }
